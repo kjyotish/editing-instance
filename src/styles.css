@@ -344,12 +344,14 @@ video {
 .hero h1 {
   max-width: 760px;
   font-size: 88px;
+  margin-bottom: 1%;
 }
 
 .hero p {
   max-width: 620px;
   font-size: 18px;
   color: rgba(255, 255, 255, 0.82);
+  margin-bottom: 2%;
 }
 
 .eyebrow {
@@ -442,6 +444,7 @@ video {
 .section h2 {
   max-width: 640px;
   font-size: 56px;
+  margin-bottom: 2%;
 }
 
 .section-copy,
@@ -488,7 +491,7 @@ video {
 .product-spotlight {
   display: grid;
   grid-template-columns: 0.95fr 1.05fr;
-  gap: 40px;
+  gap: 20px;
   align-items: center;
   padding: 0;
   overflow: hidden;
@@ -510,7 +513,7 @@ video {
 .product-spotlight > div {
   display: grid;
   justify-items: start;
-  gap: 14px;
+  gap: 20px;
   padding: 32px;
 }
 
