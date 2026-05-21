@@ -2,13 +2,28 @@ create table if not exists public.portfolio_projects (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   role text not null default 'Video edit',
-  category text not null check (category in ('documentary-style', 'motion-graphics', 'cinematic', 'ugc-ad', 'ai-videos')),
+  category text not null,
   year text not null default to_char(now(), 'YYYY'),
   poster_url text not null,
-  video_url text not null,
+  video_url text,
+  youtube_url text,
+  format text not null default 'landscape' check (format in ('landscape', 'portrait')),
   featured boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.portfolio_projects
+  drop constraint if exists portfolio_projects_category_check;
+
+alter table public.portfolio_projects
+  add column if not exists format text not null default 'landscape'
+  check (format in ('landscape', 'portrait'));
+
+alter table public.portfolio_projects
+  alter column video_url drop not null;
+
+alter table public.portfolio_projects
+  add column if not exists youtube_url text;
 
 create table if not exists public.product_categories (
   name text primary key,
@@ -36,6 +51,8 @@ create table if not exists public.digital_products (
   description text not null,
   features text[] not null default '{}',
   file_url text,
+  preview_before_url text,
+  preview_after_url text,
   is_free boolean not null default false,
   created_at timestamptz not null default now(),
   check ((is_free and price = 0) or (not is_free and price > 0))
@@ -92,6 +109,11 @@ alter table public.product_categories enable row level security;
 create policy "Public can read product categories"
   on public.product_categories for select
   using (true);
+
+create policy "Authenticated admins can manage product categories"
+  on public.product_categories for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
 alter table public.product_purchases enable row level security;
 

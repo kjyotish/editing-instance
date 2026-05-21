@@ -1,21 +1,19 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
   Check,
-  FileArchive,
-  FileVideo,
-  Image,
-  LogIn,
+  Film,
   LogOut,
   Mail,
   Menu,
   Monitor,
   Moon,
+  Package,
   Play,
   Sparkles,
   Sun,
-  UploadCloud,
+  Upload,
   X,
 } from "lucide-react";
 import { products as seedProducts, projects as seedProjects } from "./data";
@@ -26,7 +24,7 @@ import type { PortfolioCategory, Product, Project } from "./types";
 const navItems = [
   { label: "Home", to: "/" },
   { label: "Portfolio", to: "/portfolio" },
-  { label: "Services", to: "/services" },
+  { label: "Products", to: "/products" },
   { label: "About", to: "/about" },
   { label: "Contact", to: "/contact" },
 ];
@@ -34,9 +32,6 @@ const navItems = [
 type PortfolioFilter = "all" | PortfolioCategory;
 type ThemeMode = "system" | "light" | "dark";
 type ContactFunctionResponse = { message?: string; error?: string };
-type AdminTab = "portfolio" | "assets";
-type UploadStatus = "idle" | "uploading" | "success";
-
 type ProjectRow = {
   id: string;
   title: string;
@@ -44,21 +39,27 @@ type ProjectRow = {
   category: string;
   year: string;
   poster_url: string;
-  video_url: string;
+  video_url: string | null;
+  youtube_url: string | null;
+  format: "landscape" | "portrait" | null;
   featured: boolean;
 };
-
 type ProductRow = {
   id: string;
   title: string;
   category: string;
-  price: number;
+  price: number | string;
   cover_url: string;
   description: string;
-  features: string[];
-  file_url?: string | null;
+  features: string[] | null;
+  file_url: string | null;
+  preview_before_url: string | null;
+  preview_after_url: string | null;
   is_free: boolean;
 };
+
+const projectColumns = "id,title,role,category,year,poster_url,video_url,youtube_url,format,featured";
+const productColumns = "id,title,category,price,cover_url,description,features,file_url,preview_before_url,preview_after_url,is_free";
 
 const themeOptions: { value: ThemeMode; label: string; icon: typeof Monitor }[] = [
   { value: "system", label: "Device theme", icon: Monitor },
@@ -78,7 +79,9 @@ function mapProject(row: ProjectRow): Project {
     category: row.category,
     year: row.year,
     posterUrl: row.poster_url,
-    videoUrl: row.video_url,
+    videoUrl: row.video_url ?? "",
+    youtubeUrl: row.youtube_url ?? undefined,
+    format: row.format ?? "landscape",
     featured: row.featured,
   };
 }
@@ -93,20 +96,76 @@ function mapProduct(row: ProductRow): Product {
     description: row.description,
     features: row.features ?? [],
     fileUrl: row.file_url ?? undefined,
+    previewBeforeUrl: row.preview_before_url ?? undefined,
+    previewAfterUrl: row.preview_after_url ?? undefined,
     isFree: row.is_free,
   };
 }
 
-function getUploadPath(file: File, folder: string) {
-  const extension = file.name.split(".").pop() || "bin";
-  const safeName = file.name
-    .replace(/\.[^/.]+$/, "")
+function getFileExtension(file: File) {
+  const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  return extension || "file";
+}
+
+async function uploadPublicFile(bucket: "portfolio" | "products", folder: string, file: File) {
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const path = `${folder}/${crypto.randomUUID()}.${getFileExtension(file)}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    cacheControl: "3600",
+    contentType: file.type || undefined,
+    upsert: false,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+function getDownloadName(product: Product) {
+  const fallbackName = product.title
+    .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 48) || "upload";
+    .replace(/(^-|-$)/g, "") || "product";
 
-  return `${folder}/${Date.now()}-${safeName}.${extension}`;
+  try {
+    const fileName = new URL(product.fileUrl ?? "").pathname.split("/").pop();
+    return fileName ? decodeURIComponent(fileName) : fallbackName;
+  } catch {
+    return fallbackName;
+  }
+}
+
+async function downloadFreeProduct(product: Product) {
+  if (!product.fileUrl) {
+    return;
+  }
+
+  try {
+    const response = await fetch(product.fileUrl);
+
+    if (!response.ok) {
+      throw new Error("Unable to download product file.");
+    }
+
+    const objectUrl = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = getDownloadName(product);
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  } catch {
+    const link = document.createElement("a");
+    link.href = product.fileUrl;
+    link.download = getDownloadName(product);
+    link.rel = "noopener";
+    link.click();
+  }
 }
 
 async function getFunctionErrorMessage(error: unknown) {
@@ -153,34 +212,45 @@ function App() {
       return;
     }
 
-    async function loadPublishedContent() {
+    let mounted = true;
+
+    async function loadPublicContent() {
       const [projectResult, productResult] = await Promise.all([
-        supabase!
-          .from("portfolio_projects")
-          .select("id,title,role,category,year,poster_url,video_url,featured")
-          .order("created_at", { ascending: false }),
-        supabase!
-          .from("digital_products")
-          .select("id,title,category,price,cover_url,description,features,file_url,is_free")
-          .order("created_at", { ascending: false }),
+        supabase!.from("portfolio_projects").select(projectColumns).order("created_at", { ascending: false }),
+        supabase!.from("digital_products").select(productColumns).order("created_at", { ascending: false }),
       ]);
 
-      if (projectResult.data?.length) {
-        setProjects(projectResult.data.map((row) => mapProject(row as ProjectRow)));
+      if (!mounted) {
+        return;
       }
 
-      if (productResult.data?.length) {
-        setProducts(productResult.data.map((row) => mapProduct(row as ProductRow)));
+      if (!projectResult.error && projectResult.data?.length) {
+        setProjects((projectResult.data as ProjectRow[]).map(mapProject));
+      }
+
+      if (!productResult.error && productResult.data?.length) {
+        setProducts((productResult.data as ProductRow[]).map(mapProduct));
       }
     }
 
-    void loadPublishedContent();
+    void loadPublicContent();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   function handleDownloadProduct(product: Product) {
-    if (product.fileUrl) {
-      window.open(product.fileUrl, "_blank");
+    if (!product.fileUrl) {
+      return;
     }
+
+    if (product.isFree) {
+      void downloadFreeProduct(product);
+      return;
+    }
+
+    window.open(product.fileUrl, "_blank", "noopener");
   }
 
   return (
@@ -190,10 +260,21 @@ function App() {
       <Routes>
         <Route path="/" element={<Home products={products} projects={projects} onDownload={handleDownloadProduct} />} />
         <Route path="/portfolio" element={<Portfolio projects={projects} />} />
-        <Route path="/services" element={<Services products={products} onDownload={handleDownloadProduct} />} />
+        <Route path="/products" element={<Products products={products} onDownload={handleDownloadProduct} />} />
+        <Route path="/services" element={<Products products={products} onDownload={handleDownloadProduct} />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/about" element={<About />} />
-        <Route path="/admin" element={<Admin onProjectCreated={(project) => setProjects((items) => [project, ...items])} onProductCreated={(product) => setProducts((items) => [product, ...items])} />} />
+        <Route
+          path="/admin"
+          element={(
+            <Admin
+              products={products}
+              projects={projects}
+              onProductCreated={(product) => setProducts((current) => [product, ...current])}
+              onProjectCreated={(project) => setProjects((current) => [project, ...current])}
+            />
+          )}
+        />
       </Routes>
       <Footer />
     </div>
@@ -269,7 +350,9 @@ function Home({
   projects: Project[];
   onDownload: (product: Product) => void;
 }) {
-  const featuredProject = projects.find((project) => project.featured) ?? projects[0];
+  const featuredProject = projects.find((project) => project.featured && project.videoUrl)
+    ?? projects.find((project) => project.videoUrl)
+    ?? projects[0];
   const categories = Array.from(new Set(products.map((product) => product.category)));
 
   const sectionCopy: Record<string, string> = {
@@ -293,14 +376,14 @@ function Home({
           <p>Editing, color, sound, and digital assets for brands, creators, and filmmakers who care about the final frame.</p>
           <div className="hero-actions">
             <Link className="primary-btn" to="/portfolio">View Work <ArrowRight size={16} /></Link>
-            <Link className="secondary-btn light" to="/services">Digital Assets</Link>
+            <Link className="secondary-btn light" to="/products">Digital Assets</Link>
           </div>
         </div>
       </section>
 
       <section className="section product-categories">
         {categories.map((category) => {
-          const sectionProducts = products.filter((product) => product.category === category);
+          const sectionProducts = products.filter((product) => product.category === category).slice(0, 2);
           if (!sectionProducts.length) {
             return null;
           }
@@ -321,6 +404,9 @@ function Home({
                   <ProductCard key={product.id} product={product} onDownload={onDownload} />
                 ))}
               </div>
+              <Link className="secondary-btn category-link" to={`/products?category=${encodeURIComponent(category)}`}>
+                Explore all {category} <ArrowRight size={16} />
+              </Link>
             </div>
           );
         })}
@@ -388,18 +474,23 @@ function Portfolio({ projects }: { projects: Project[] }) {
   );
 }
 
-function Services({ products, onDownload }: { products: Product[]; onDownload: (product: Product) => void }) {
-  const [filter, setFilter] = useState("All");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+function Products({ products, onDownload }: { products: Product[]; onDownload: (product: Product) => void }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
+  const categoryParam = searchParams.get("category");
+  const filter = categoryParam && categories.includes(categoryParam) ? categoryParam : "All";
   const visibleProducts = filter === "All" ? products : products.filter((product) => product.category === filter);
+
+  function handleFilter(category: string) {
+    setSearchParams(category === "All" ? {} : { category });
+  }
 
   return (
     <main className="page fade-in">
       <PageHeader
-        eyebrow="Services and store"
-        title="Post-production systems for sharper films."
-        copy="Hire Editing Instance for polished video work, or buy digital assets that bring the same finishing language into your own timeline."
+        eyebrow="Products"
+        title="Digital assets for sharper edits."
+        copy="Browse every product category, then download the assets that fit your editing and post-production workflow."
       />
       <section className="service-row">
         {["Commercial Editing", "Color Grading", "Short-form Systems"].map((service) => (
@@ -412,7 +503,7 @@ function Services({ products, onDownload }: { products: Product[]; onDownload: (
       </section>
       <div className="filter-bar" aria-label="Product filters">
         {categories.map((category) => (
-          <button className={filter === category ? "chip active" : "chip"} key={category} type="button" onClick={() => setFilter(category)}>
+          <button className={filter === category ? "chip active" : "chip"} key={category} type="button" onClick={() => handleFilter(category)}>
             {category}
           </button>
         ))}
@@ -421,6 +512,491 @@ function Services({ products, onDownload }: { products: Product[]; onDownload: (
         {visibleProducts.map((product) => (
           <ProductCard key={product.id} product={product} onDownload={onDownload} />
         ))}
+      </section>
+    </main>
+  );
+}
+
+function getRequiredFile(formData: FormData, name: string) {
+  const file = formData.get(name);
+
+  if (!(file instanceof File) || !file.size) {
+    throw new Error(`Choose a ${name.replace("-", " ")} file.`);
+  }
+
+  return file;
+}
+
+function getOptionalFile(formData: FormData, name: string) {
+  const file = formData.get(name);
+  return file instanceof File && file.size ? file : null;
+}
+
+function getCategoryValue(formData: FormData, selectName: string, customName: string) {
+  const category = String(formData.get(customName) || formData.get(selectName) || "").trim();
+
+  if (!category) {
+    throw new Error("Choose a category or create a custom one.");
+  }
+
+  return category;
+}
+
+function isLutCategory(category: string) {
+  return /^luts?$/i.test(category.trim());
+}
+
+function getYouTubeEmbedUrl(url: string | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    const host = parsedUrl.hostname.replace(/^www\./, "");
+    const pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+    const videoId = host === "youtu.be"
+      ? pathParts[0]
+      : host.endsWith("youtube.com")
+        ? parsedUrl.searchParams.get("v") || pathParts[pathParts.length - 1]
+        : null;
+
+    if (!videoId || !/^[A-Za-z0-9_-]{6,}$/.test(videoId)) {
+      return null;
+    }
+
+    return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0`;
+  } catch {
+    return null;
+  }
+}
+
+function Admin({
+  products,
+  projects,
+  onProductCreated,
+  onProjectCreated,
+}: {
+  products: Product[];
+  projects: Project[];
+  onProductCreated: (product: Product) => void;
+  onProjectCreated: (project: Project) => void;
+}) {
+  const [mode, setMode] = useState<"products" | "portfolio">("products");
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const productCategories = Array.from(new Set(products.map((product) => product.category))).sort();
+  const portfolioCategoryOptions = Array.from(new Set([
+    ...portfolioCategories.map((category) => category.value),
+    ...projects.map((project) => project.category),
+  ]));
+
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) {
+      setAuthChecking(false);
+      return;
+    }
+
+    let mounted = true;
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (mounted) {
+        setAdminEmail(data.session?.user.email ?? null);
+        setAuthChecking(false);
+      }
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAdminEmail(session?.user.email ?? null);
+      setAuthChecking(false);
+    });
+
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError(null);
+
+    if (!supabase) {
+      setAuthError("Add the Supabase URL and anon key before using admin uploads.");
+      return;
+    }
+
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") || "").trim();
+    const password = String(formData.get("password") || "");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      setAuthError(error.message);
+    }
+  }
+
+  async function handleProductUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+    setFormSuccess(null);
+
+    if (!supabase) {
+      setFormError("Supabase is not configured.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setSaving(true);
+      const title = String(formData.get("title") || "").trim();
+      const description = String(formData.get("description") || "").trim();
+      const customCategory = String(formData.get("custom-category") || "").trim();
+      const category = getCategoryValue(formData, "category", "custom-category");
+      const isFree = formData.get("is-free") === "on";
+      const price = isFree ? 0 : Number(formData.get("price"));
+      const cover = getRequiredFile(formData, "cover");
+      const asset = getOptionalFile(formData, "asset");
+      const previewBefore = getOptionalFile(formData, "preview-before");
+      const previewAfter = getOptionalFile(formData, "preview-after");
+      const features = String(formData.get("features") || "")
+        .split(/\n|,/)
+        .map((feature) => feature.trim())
+        .filter(Boolean);
+
+      if (!title || !description) {
+        throw new Error("Product title and description are required.");
+      }
+
+      if (!isFree && (!Number.isFinite(price) || price <= 0)) {
+        throw new Error("Paid products need a price greater than zero.");
+      }
+
+      if ((previewBefore && !previewAfter) || (!previewBefore && previewAfter)) {
+        throw new Error("Upload both LUT preview images: before and after.");
+      }
+
+      if (isLutCategory(category) && (!previewBefore || !previewAfter)) {
+        throw new Error("LUT products need before and after preview images.");
+      }
+
+      if (customCategory) {
+        const { error: categoryError } = await supabase
+          .from("product_categories")
+          .upsert({ name: category }, { onConflict: "name", ignoreDuplicates: true });
+
+        if (categoryError) {
+          throw new Error(`${categoryError.message}. Run the admin upload Supabase upgrade before creating custom product categories.`);
+        }
+      }
+
+      const [coverUrl, fileUrl, previewBeforeUrl, previewAfterUrl] = await Promise.all([
+        uploadPublicFile("products", "covers", cover),
+        asset ? uploadPublicFile("products", "files", asset) : Promise.resolve(undefined),
+        previewBefore ? uploadPublicFile("products", "lut-preview-before", previewBefore) : Promise.resolve(undefined),
+        previewAfter ? uploadPublicFile("products", "lut-preview-after", previewAfter) : Promise.resolve(undefined),
+      ]);
+
+      const { data, error } = await supabase
+        .from("digital_products")
+        .insert({
+          title,
+          category,
+          price,
+          cover_url: coverUrl,
+          description,
+          features,
+          file_url: fileUrl,
+          preview_before_url: previewBeforeUrl,
+          preview_after_url: previewAfterUrl,
+          is_free: isFree,
+        })
+        .select(productColumns)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      onProductCreated(mapProduct(data as ProductRow));
+      form.reset();
+      setFormSuccess(`Published ${title}.`);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to upload this product.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handlePortfolioUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+    setFormSuccess(null);
+
+    if (!supabase) {
+      setFormError("Supabase is not configured.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setSaving(true);
+      const title = String(formData.get("title") || "").trim();
+      const role = String(formData.get("role") || "").trim() || "Video edit";
+      const category = getCategoryValue(formData, "category", "custom-category");
+      const year = String(formData.get("year") || "").trim() || String(new Date().getFullYear());
+      const poster = getRequiredFile(formData, "poster");
+      const video = getOptionalFile(formData, "video");
+      const youtubeUrl = String(formData.get("youtube-url") || "").trim();
+      const format = formData.get("format") === "portrait" ? "portrait" : "landscape";
+      const featured = formData.get("featured") === "on";
+
+      if (!title) {
+        throw new Error("Portfolio title is required.");
+      }
+
+      if (!video && !getYouTubeEmbedUrl(youtubeUrl)) {
+        throw new Error("Upload a video file or add a valid YouTube video link.");
+      }
+
+      const [posterUrl, videoUrl] = await Promise.all([
+        uploadPublicFile("portfolio", "posters", poster),
+        video ? uploadPublicFile("portfolio", "videos", video) : Promise.resolve(undefined),
+      ]);
+
+      const { data, error } = await supabase
+        .from("portfolio_projects")
+        .insert({
+          title,
+          role,
+          category,
+          year,
+          poster_url: posterUrl,
+          video_url: videoUrl,
+          youtube_url: youtubeUrl || null,
+          format,
+          featured,
+        })
+        .select(projectColumns)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      onProjectCreated(mapProject(data as ProjectRow));
+      form.reset();
+      setFormSuccess(`Published ${title}.`);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to upload this portfolio video.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!isSupabaseConfigured) {
+    return (
+      <main className="page fade-in">
+        <PageHeader eyebrow="Admin" title="Upload studio content." copy="Configure Supabase before using the product and portfolio upload system." />
+        <p className="form-error admin-message">Missing `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY`.</p>
+      </main>
+    );
+  }
+
+  if (authChecking) {
+    return (
+      <main className="page fade-in">
+        <p className="admin-note">Checking admin session...</p>
+      </main>
+    );
+  }
+
+  if (!adminEmail) {
+    return (
+      <main className="page fade-in">
+        <PageHeader eyebrow="Admin" title="Sign in to publish." copy="Use an invited Supabase Auth account to upload products and portfolio videos." />
+        <section className="glass-card admin-auth">
+          <Upload size={22} />
+          <form onSubmit={handleSignIn}>
+            <h2>Admin access</h2>
+            {authError && <p className="form-error">{authError}</p>}
+            <label>
+              Email
+              <input name="email" type="email" autoComplete="email" required />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autoComplete="current-password" required />
+            </label>
+            <button className="primary-btn full" type="submit">Sign in</button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="page fade-in">
+      <PageHeader eyebrow="Admin" title="Publish products and portfolio videos." copy="Create categories as you upload. Public pages read the uploaded records from Supabase." />
+      <div className="admin-toolbar">
+        <div className="filter-bar" aria-label="Admin upload type">
+          <button className={mode === "products" ? "chip active" : "chip"} type="button" onClick={() => setMode("products")}>
+            Products
+          </button>
+          <button className={mode === "portfolio" ? "chip active" : "chip"} type="button" onClick={() => setMode("portfolio")}>
+            Portfolio videos
+          </button>
+        </div>
+        <button className="secondary-btn" type="button" onClick={() => void supabase?.auth.signOut()}>
+          <LogOut size={16} /> Sign out {adminEmail}
+        </button>
+      </div>
+      {formError && <p className="form-error admin-message">{formError}</p>}
+      {formSuccess && <p className="form-success admin-message">{formSuccess}</p>}
+      <section className="admin-layout">
+        {mode === "products" ? (
+          <form className="glass-card admin-form" onSubmit={handleProductUpload}>
+            <Package size={22} />
+            <h2>Create product</h2>
+            <div className="admin-form-grid">
+              <label>
+                Title
+                <input name="title" required />
+              </label>
+              <label>
+                Price
+                <input name="price" type="number" min="0" step="0.01" placeholder="49" />
+              </label>
+              <label>
+                Existing category
+                <select name="category" defaultValue="">
+                  <option value="">Choose category</option>
+                  {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </label>
+              <label>
+                Custom category
+                <input name="custom-category" placeholder="New category name" />
+              </label>
+            </div>
+            <label>
+              Description
+              <textarea name="description" rows={4} required />
+            </label>
+            <label>
+              Features
+              <textarea name="features" rows={4} placeholder="One feature per line" />
+            </label>
+            <div className="admin-form-grid">
+              <label>
+                Cover image
+                <input name="cover" type="file" accept="image/*" required />
+              </label>
+              <label>
+                Download file
+                <input name="asset" type="file" />
+              </label>
+            </div>
+            <div className="admin-form-grid">
+              <label>
+                LUT preview before
+                <input name="preview-before" type="file" accept="image/*" />
+              </label>
+              <label>
+                LUT preview after
+                <input name="preview-after" type="file" accept="image/*" />
+              </label>
+            </div>
+            <label className="checkbox-label">
+              <input name="is-free" type="checkbox" />
+              Free product
+            </label>
+            <button className="primary-btn full" type="submit" disabled={saving}>
+              {saving ? "Uploading..." : "Publish product"}
+            </button>
+          </form>
+        ) : (
+          <form className="glass-card admin-form" onSubmit={handlePortfolioUpload}>
+            <Film size={22} />
+            <h2>Create portfolio video</h2>
+            <div className="admin-form-grid">
+              <label>
+                Title
+                <input name="title" required />
+              </label>
+              <label>
+                Role
+                <input name="role" placeholder="Edit, grade, sound design" />
+              </label>
+              <label>
+                Existing category
+                <select name="category" defaultValue="">
+                  <option value="">Choose category</option>
+                  {portfolioCategoryOptions.map((category) => (
+                    <option key={category} value={category}>{getPortfolioCategoryLabel(category)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Custom category
+                <input name="custom-category" placeholder="New category name" />
+              </label>
+              <label>
+                Year
+                <input name="year" inputMode="numeric" placeholder={String(new Date().getFullYear())} />
+              </label>
+              <label>
+                Video format
+                <select name="format" defaultValue="landscape">
+                  <option value="landscape">Landscape</option>
+                  <option value="portrait">Portrait</option>
+                </select>
+              </label>
+            </div>
+            <div className="admin-form-grid">
+              <label>
+                Poster image
+                <input name="poster" type="file" accept="image/*" required />
+              </label>
+              <label>
+                Video file
+                <input name="video" type="file" accept="video/*" />
+              </label>
+              <label>
+                YouTube video link
+                <input name="youtube-url" type="url" placeholder="https://youtu.be/..." />
+              </label>
+            </div>
+            <label className="checkbox-label">
+              <input name="featured" type="checkbox" />
+              Use as home hero video
+            </label>
+            <button className="primary-btn full" type="submit" disabled={saving}>
+              {saving ? "Uploading..." : "Publish portfolio video"}
+            </button>
+          </form>
+        )}
+        <aside className="admin-help">
+          <article className="glass-card admin-card">
+            <Package size={22} />
+            <h3>Product categories</h3>
+            <p>Every uploaded product becomes an instance on the products page. Home shows the latest two items from each category and links into the full category view.</p>
+          </article>
+          <article className="glass-card admin-card">
+            <Film size={22} />
+            <h3>Portfolio categories</h3>
+            <p>Choose a listed category or type a custom category for a new portfolio group. Portrait format keeps vertical videos framed on the public portfolio grid.</p>
+          </article>
+        </aside>
       </section>
     </main>
   );
@@ -592,458 +1168,6 @@ function Contact() {
   );
 }
 
-function Admin({
-  onProjectCreated,
-  onProductCreated,
-}: {
-  onProjectCreated: (project: Project) => void;
-  onProductCreated: (product: Product) => void;
-}) {
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  const [loginData, setLoginData] = useState({ email: "", password: "" });
-  const [tab, setTab] = useState<AdminTab>("portfolio");
-  const [projectForm, setProjectForm] = useState<{
-    title: string;
-    role: string;
-    category: string;
-    year: string;
-    featured: boolean;
-  }>({
-    title: "",
-    role: "",
-    category: portfolioCategories[0].value,
-    year: String(new Date().getFullYear()),
-    featured: false,
-  });
-  const [productForm, setProductForm] = useState({
-    title: "",
-    category: "Premium Text Animations",
-    price: "0",
-    description: "",
-    features: "",
-    isFree: false,
-  });
-  const [projectVideo, setProjectVideo] = useState<File | null>(null);
-  const [projectPoster, setProjectPoster] = useState<File | null>(null);
-  const [productCover, setProductCover] = useState<File | null>(null);
-  const [productFile, setProductFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<UploadStatus>("idle");
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const productCategories = [
-    "Premium Text Animations",
-    "Free Motion Graphics",
-    "LUTs",
-    "Transitions",
-    "Editor Essentials",
-    "Premiere Plugins",
-    "Soundscapes",
-    "Presets",
-  ];
-
-  useEffect(() => {
-    if (!supabase || !isSupabaseConfigured) {
-      return;
-    }
-
-    supabase.auth.getSession().then(({ data }) => {
-      setSessionEmail(data.session?.user.email ?? null);
-    });
-
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSessionEmail(session?.user.email ?? null);
-    });
-
-    return () => data.subscription.unsubscribe();
-  }, []);
-
-  async function uploadPublicFile(bucket: "portfolio" | "products", file: File, folder: string) {
-    if (!supabase) {
-      throw new Error("Supabase is not configured.");
-    }
-
-    const path = getUploadPath(file, folder);
-    const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
-      contentType: file.type || undefined,
-    });
-
-    if (uploadError) {
-      throw uploadError;
-    }
-
-    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
-  }
-
-  async function handleLogin(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-
-    if (!supabase || !isSupabaseConfigured) {
-      setError("Supabase is not configured. Add your project URL and anon key to .env first.");
-      return;
-    }
-
-    const { error: loginError } = await supabase.auth.signInWithPassword({
-      email: loginData.email.trim(),
-      password: loginData.password,
-    });
-
-    if (loginError) {
-      setError(loginError.message);
-      return;
-    }
-
-    setLoginData({ email: "", password: "" });
-  }
-
-  async function handleLogout() {
-    if (!supabase) {
-      return;
-    }
-
-    await supabase.auth.signOut();
-  }
-
-  async function handleProjectSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-
-    if (!supabase || !isSupabaseConfigured) {
-      setError("Supabase is not configured.");
-      return;
-    }
-
-    if (!projectVideo || !projectPoster) {
-      setError("Choose both a portfolio video and poster image.");
-      return;
-    }
-
-    setStatus("uploading");
-
-    try {
-      const [videoUrl, posterUrl] = await Promise.all([
-        uploadPublicFile("portfolio", projectVideo, "videos"),
-        uploadPublicFile("portfolio", projectPoster, "posters"),
-      ]);
-
-      const payload = {
-        title: projectForm.title.trim(),
-        role: projectForm.role.trim() || "Video edit",
-        category: projectForm.category,
-        year: projectForm.year.trim() || String(new Date().getFullYear()),
-        poster_url: posterUrl,
-        video_url: videoUrl,
-        featured: projectForm.featured,
-      };
-
-      const { data, error: insertError } = await supabase
-        .from("portfolio_projects")
-        .insert(payload)
-        .select("id,title,role,category,year,poster_url,video_url,featured")
-        .single();
-
-      if (insertError) {
-        throw insertError;
-      }
-
-      onProjectCreated(mapProject(data as ProjectRow));
-      setStatus("success");
-      setMessage("Portfolio video published.");
-      setProjectForm({
-        title: "",
-        role: "",
-        category: portfolioCategories[0].value,
-        year: String(new Date().getFullYear()),
-        featured: false,
-      });
-      setProjectVideo(null);
-      setProjectPoster(null);
-      event.currentTarget.reset();
-    } catch (uploadError) {
-      setError((uploadError as { message?: string }).message || "Unable to publish portfolio video.");
-      setStatus("idle");
-      return;
-    }
-
-    setTimeout(() => setStatus("idle"), 1600);
-  }
-
-  async function handleProductSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setMessage(null);
-
-    if (!supabase || !isSupabaseConfigured) {
-      setError("Supabase is not configured.");
-      return;
-    }
-
-    if (!productCover) {
-      setError("Choose a cover image for the asset.");
-      return;
-    }
-
-    const price = productForm.isFree ? 0 : Number(productForm.price);
-    if (!productForm.isFree && (!Number.isFinite(price) || price <= 0)) {
-      setError("Paid assets need a price greater than zero.");
-      return;
-    }
-
-    setStatus("uploading");
-
-    try {
-      const [coverUrl, fileUrl] = await Promise.all([
-        uploadPublicFile("products", productCover, "covers"),
-        productFile ? uploadPublicFile("products", productFile, "files") : Promise.resolve(undefined),
-      ]);
-
-      const payload = {
-        title: productForm.title.trim(),
-        category: productForm.category,
-        price,
-        cover_url: coverUrl,
-        description: productForm.description.trim(),
-        features: productForm.features
-          .split(/\n|,/)
-          .map((feature) => feature.trim())
-          .filter(Boolean),
-        file_url: fileUrl,
-        is_free: productForm.isFree,
-      };
-
-      const { data, error: insertError } = await supabase
-        .from("digital_products")
-        .insert(payload)
-        .select("id,title,category,price,cover_url,description,features,file_url,is_free")
-        .single();
-
-      if (insertError) {
-        throw insertError;
-      }
-
-      onProductCreated(mapProduct(data as ProductRow));
-      setStatus("success");
-      setMessage("Digital asset published.");
-      setProductForm({
-        title: "",
-        category: "Premium Text Animations",
-        price: "0",
-        description: "",
-        features: "",
-        isFree: false,
-      });
-      setProductCover(null);
-      setProductFile(null);
-      event.currentTarget.reset();
-    } catch (uploadError) {
-      setError((uploadError as { message?: string }).message || "Unable to publish digital asset.");
-      setStatus("idle");
-      return;
-    }
-
-    setTimeout(() => setStatus("idle"), 1600);
-  }
-
-  if (!sessionEmail) {
-    return (
-      <main className="page fade-in">
-        <PageHeader
-          eyebrow="Admin"
-          title="Upload studio work."
-          copy="Sign in with an invited Supabase admin account to publish portfolio videos and downloadable editing assets."
-        />
-        <section className="admin-auth glass-card">
-          <form onSubmit={handleLogin}>
-            <LogIn size={26} />
-            <h2>Admin sign in</h2>
-            {error && <p className="form-error">{error}</p>}
-            <label>
-              Email
-              <input
-                type="email"
-                value={loginData.email}
-                onChange={(event) => setLoginData({ ...loginData, email: event.target.value })}
-                required
-              />
-            </label>
-            <label>
-              Password
-              <input
-                type="password"
-                value={loginData.password}
-                onChange={(event) => setLoginData({ ...loginData, password: event.target.value })}
-                required
-              />
-            </label>
-            <button className="primary-btn full" type="submit">Sign in</button>
-          </form>
-        </section>
-      </main>
-    );
-  }
-
-  return (
-    <main className="page fade-in">
-      <PageHeader
-        eyebrow="Admin"
-        title="Publish uploads."
-        copy="Upload portfolio videos, poster frames, product covers, and downloadable asset files directly into Supabase."
-      />
-      <div className="admin-toolbar">
-        <div className="filter-bar" aria-label="Admin upload type">
-          <button className={tab === "portfolio" ? "chip active" : "chip"} type="button" onClick={() => setTab("portfolio")}>
-            Portfolio videos
-          </button>
-          <button className={tab === "assets" ? "chip active" : "chip"} type="button" onClick={() => setTab("assets")}>
-            Digital assets
-          </button>
-        </div>
-        <button className="secondary-btn" type="button" onClick={handleLogout}>
-          <LogOut size={16} /> Sign out
-        </button>
-      </div>
-      {(error || message) && (
-        <p className={error ? "form-error admin-message" : "form-success admin-message"}>
-          {error || message}
-        </p>
-      )}
-
-      {tab === "portfolio" ? (
-        <section className="admin-layout">
-          <form className="glass-card admin-card admin-form" onSubmit={handleProjectSubmit}>
-            <FileVideo size={28} />
-            <h2>Portfolio video</h2>
-            <div className="admin-form-grid">
-              <label>
-                Title
-                <input value={projectForm.title} onChange={(event) => setProjectForm({ ...projectForm, title: event.target.value })} required />
-              </label>
-              <label>
-                Role / credit
-                <input value={projectForm.role} onChange={(event) => setProjectForm({ ...projectForm, role: event.target.value })} placeholder="Edit, Grade, Sound Design" />
-              </label>
-              <label>
-                Category
-                <select value={projectForm.category} onChange={(event) => setProjectForm({ ...projectForm, category: event.target.value })}>
-                  {portfolioCategories.map((category) => (
-                    <option key={category.value} value={category.value}>{category.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Year
-                <input value={projectForm.year} onChange={(event) => setProjectForm({ ...projectForm, year: event.target.value })} required />
-              </label>
-              <label>
-                Video file
-                <input type="file" accept="video/*" onChange={(event) => setProjectVideo(event.target.files?.[0] ?? null)} required />
-              </label>
-              <label>
-                Poster image
-                <input type="file" accept="image/*" onChange={(event) => setProjectPoster(event.target.files?.[0] ?? null)} required />
-              </label>
-            </div>
-            <label className="checkbox-label">
-              <input type="checkbox" checked={projectForm.featured} onChange={(event) => setProjectForm({ ...projectForm, featured: event.target.checked })} />
-              Use as featured hero video
-            </label>
-            <button className="primary-btn full" type="submit" disabled={status === "uploading"}>
-              <UploadCloud size={16} /> {status === "uploading" ? "Uploading..." : "Publish video"}
-            </button>
-          </form>
-          <div className="admin-help">
-            <article className="glass-card admin-card">
-              <Image size={28} />
-              <h3>Storage target</h3>
-              <p>Videos and posters are uploaded to the public `portfolio` bucket, then saved to `portfolio_projects`.</p>
-            </article>
-            <article className="glass-card admin-card">
-              <Sparkles size={28} />
-              <h3>Live update</h3>
-              <p>Successful uploads appear in the portfolio immediately and will load from Supabase on future visits.</p>
-            </article>
-          </div>
-        </section>
-      ) : (
-        <section className="admin-layout">
-          <form className="glass-card admin-card admin-form" onSubmit={handleProductSubmit}>
-            <FileArchive size={28} />
-            <h2>Digital asset</h2>
-            <div className="admin-form-grid">
-              <label>
-                Title
-                <input value={productForm.title} onChange={(event) => setProductForm({ ...productForm, title: event.target.value })} required />
-              </label>
-              <label>
-                Category
-                <select value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}>
-                  {productCategories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Price
-                <input
-                  min="0"
-                  step="0.01"
-                  type="number"
-                  value={productForm.price}
-                  onChange={(event) => setProductForm({ ...productForm, price: event.target.value })}
-                  disabled={productForm.isFree}
-                  required
-                />
-              </label>
-              <label>
-                Cover image
-                <input type="file" accept="image/*" onChange={(event) => setProductCover(event.target.files?.[0] ?? null)} required />
-              </label>
-              <label>
-                Asset file
-                <input type="file" onChange={(event) => setProductFile(event.target.files?.[0] ?? null)} />
-              </label>
-              <label>
-                Features
-                <textarea value={productForm.features} onChange={(event) => setProductForm({ ...productForm, features: event.target.value })} rows={4} placeholder="One feature per line" />
-              </label>
-            </div>
-            <label>
-              Description
-              <textarea value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} rows={5} required />
-            </label>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={productForm.isFree}
-                onChange={(event) => setProductForm({ ...productForm, isFree: event.target.checked, price: event.target.checked ? "0" : productForm.price })}
-              />
-              Publish as a free download
-            </label>
-            <button className="primary-btn full" type="submit" disabled={status === "uploading"}>
-              <UploadCloud size={16} /> {status === "uploading" ? "Uploading..." : "Publish asset"}
-            </button>
-          </form>
-          <div className="admin-help">
-            <article className="glass-card admin-card">
-              <Image size={28} />
-              <h3>Product media</h3>
-              <p>Covers and downloadable files are uploaded to the public `products` bucket, then saved to `digital_products`.</p>
-            </article>
-            <article className="glass-card admin-card">
-              <Check size={28} />
-              <h3>Ready to sell</h3>
-              <p>New assets appear in Services and on the home product sections as soon as publishing finishes.</p>
-            </article>
-          </div>
-        </section>
-      )}
-    </main>
-  );
-}
-
 
 function PageHeader({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
   return (
@@ -1070,6 +1194,7 @@ function ProjectPreview({ project }: { project: Project }) {
 
 function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: Project) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const youtubeEmbedUrl = getYouTubeEmbedUrl(project.youtubeUrl);
 
   return (
     <article className={project.format === "portrait" ? "project-card portrait" : "project-card"}>
@@ -1085,9 +1210,13 @@ function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: 
           }
         }}
       >
-        <video ref={videoRef} muted loop playsInline poster={project.posterUrl}>
-          <source src={project.videoUrl} type="video/mp4" />
-        </video>
+        {youtubeEmbedUrl ? (
+          <img className="project-poster" src={project.posterUrl} alt={project.title} loading="lazy" />
+        ) : (
+          <video ref={videoRef} muted loop playsInline poster={project.posterUrl}>
+            <source src={project.videoUrl} type="video/mp4" />
+          </video>
+        )}
         <span><Play size={18} /></span>
       </button>
       <div className="project-meta">
@@ -1099,15 +1228,26 @@ function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: 
 }
 
 function Theater({ project, onClose }: { project: Project; onClose: () => void }) {
+  const youtubeEmbedUrl = getYouTubeEmbedUrl(project.youtubeUrl);
+
   return (
     <div className={project.format === "portrait" ? "theater portrait" : "theater"} role="dialog" aria-modal="true">
       <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close video">
         <X size={18} />
       </button>
       <div className="theater-panel">
-        <video controls autoPlay poster={project.posterUrl}>
-          <source src={project.videoUrl} type="video/mp4" />
-        </video>
+        {youtubeEmbedUrl ? (
+          <iframe
+            allow="autoplay; encrypted-media; picture-in-picture"
+            allowFullScreen
+            src={`${youtubeEmbedUrl}&autoplay=1`}
+            title={project.title}
+          />
+        ) : (
+          <video controls autoPlay poster={project.posterUrl}>
+            <source src={project.videoUrl} type="video/mp4" />
+          </video>
+        )}
         <div className="theater-meta">
           <h2>{project.title}</h2>
           <p>{project.role} · {project.year}</p>
@@ -1118,23 +1258,71 @@ function Theater({ project, onClose }: { project: Project; onClose: () => void }
   );
 }
 
-function ProductCard({ product, onDownload, compact = false }: { product: Product; onDownload: (product: Product) => void; compact?: boolean }) {
+function LutPreviewSlider({ product, compact = false }: { product: Product; compact?: boolean }) {
+  const [mix, setMix] = useState(50);
+
+  if (!product.previewBeforeUrl || !product.previewAfterUrl) {
+    return null;
+  }
+
   return (
-    <article className={`glass-card service-card product-card${compact ? " compact" : ""}`} onClick={() => onDownload(product)}>
-      <img src={product.coverUrl} alt={product.title} loading="lazy" />
+    <div className={compact ? "before-after lut-card-preview" : "before-after"}>
+      <img src={product.previewBeforeUrl} alt={`${product.title} before LUT`} />
+      <div className="after-layer" style={{ clipPath: `inset(0 ${100 - mix}% 0 0)` }}>
+        <img src={product.previewAfterUrl} alt={`${product.title} after LUT`} />
+      </div>
+      <input
+        aria-label={`Compare ${product.title} LUT preview`}
+        min="0"
+        max="100"
+        type="range"
+        value={mix}
+        onChange={(event) => setMix(Number(event.target.value))}
+      />
+    </div>
+  );
+}
+
+function LutPreview({ product, onClose }: { product: Product; onClose: () => void }) {
+  return (
+    <div className="product-modal" role="dialog" aria-modal="true" aria-label={`${product.title} LUT preview`}>
+      <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close LUT preview">
+        <X size={18} />
+      </button>
+      <div className="product-detail">
+        <LutPreviewSlider product={product} />
+        <div className="glass-card buy-box lut-preview-meta">
+          <p className="eyebrow">LUT preview</p>
+          <h2>{product.title}</h2>
+          <p>{product.description}</p>
+          <p className="muted">Drag the slider to compare the source frame with the graded LUT preview.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({ product, onDownload, compact = false }: { product: Product; onDownload: (product: Product) => void; compact?: boolean }) {
+  const hasLutPreview = isLutCategory(product.category)
+    && Boolean(product.previewBeforeUrl && product.previewAfterUrl);
+
+  return (
+    <article className={`glass-card service-card product-card${compact ? " compact" : ""}`}>
+      {hasLutPreview ? <LutPreviewSlider product={product} compact /> : <img src={product.coverUrl} alt={product.title} loading="lazy" />}
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>{product.title}</h3>
         <p>{product.description}</p>
       </div>
       <div className="product-card-action">
-        <button className="secondary-btn full" type="button" onClick={(event) => { event.stopPropagation(); onDownload(product); }}>
+        <button className="secondary-btn full" type="button" onClick={() => onDownload(product)}>
           Download
         </button>
       </div>
     </article>
   );
 }
+
 
 
 function Footer() {

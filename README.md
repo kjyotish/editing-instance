@@ -18,12 +18,9 @@ npm run dev
    ```bash
    supabase functions deploy send-contact-email
    ```
-5. Add the Edge Function secrets. Use either SendGrid or Gmail SMTP:
+5. Add the Edge Function secrets for Gmail SMTP. Use a Gmail app password for `GMAIL_SMTP_PASSWORD`, not your normal Google account password:
    ```bash
-   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key EMAIL_TO=you@example.com EMAIL_FROM=verified-sender@example.com SENDGRID_API_KEY=your-sendgrid-api-key
-   ```
-   ```bash
-   supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key EMAIL_TO=you@example.com GMAIL_SMTP_USER=you@gmail.com GMAIL_SMTP_PASSWORD=your-gmail-app-password
+   supabase secrets set EMAIL_TO=kjyotish124@gmail.com GMAIL_SMTP_USER=your-gmail-address@gmail.com GMAIL_SMTP_PASSWORD=your-gmail-app-password GMAIL_SMTP_HOST=smtp.gmail.com GMAIL_SMTP_PORT=465
    ```
 6. Invite admin users through Supabase Auth.
 
@@ -32,3 +29,5 @@ The frontend only uses the public anon key. Keep service-role keys out of the br
 ## Admin Uploads
 
 Visit `/admin` and sign in with an invited Supabase Auth user. The admin page uploads portfolio videos/posters to the `portfolio` bucket and digital asset covers/files to the `products` bucket, then saves the matching rows in `portfolio_projects` and `digital_products`.
+
+For existing Supabase projects, run `supabase/admin-upload-upgrade.sql` in the SQL editor before using the new admin forms. It adds custom product category writes, upload storage policies, LUT before/after preview fields, YouTube portfolio link support, and portfolio video format for uploaded landscape or portrait entries. Uploaded products appear on `/products`; the home page shows two products from each category and links to the full category list.

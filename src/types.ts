@@ -18,6 +18,7 @@ export type Project = {
   year: string;
   posterUrl: string;
   videoUrl: string;
+  youtubeUrl?: string;
   format?: "landscape" | "portrait";
   featured?: boolean;
 };
@@ -31,5 +32,7 @@ export type Product = {
   description: string;
   features: string[];
   fileUrl?: string;
+  previewBeforeUrl?: string;
+  previewAfterUrl?: string;
   isFree?: boolean;
 };
