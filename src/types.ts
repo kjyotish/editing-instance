@@ -8,7 +8,7 @@ export const portfolioCategories = [
 
 export type PortfolioCategory = (typeof portfolioCategories)[number]["value"] | string;
 
-export type ProductCategory = "LUTs" | "Premiere Plugins" | "Soundscapes" | "Presets";
+export type ProductCategory = string;
 
 export type Project = {
   id: string;
@@ -31,4 +31,5 @@ export type Product = {
   description: string;
   features: string[];
   fileUrl?: string;
+  isFree?: boolean;
 };

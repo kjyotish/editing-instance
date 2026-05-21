@@ -1,17 +1,18 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes } from "react-router-dom";
 import {
   ArrowRight,
   Check,
-  Film,
-  ImagePlus,
-  Lock,
+  FileArchive,
+  FileVideo,
+  Image,
+  LogIn,
+  LogOut,
+  Mail,
   Menu,
   Monitor,
   Moon,
-  Package,
   Play,
-  ShoppingBag,
   Sparkles,
   Sun,
   UploadCloud,
@@ -27,10 +28,37 @@ const navItems = [
   { label: "Portfolio", to: "/portfolio" },
   { label: "Services", to: "/services" },
   { label: "About", to: "/about" },
+  { label: "Contact", to: "/contact" },
 ];
 
 type PortfolioFilter = "all" | PortfolioCategory;
 type ThemeMode = "system" | "light" | "dark";
+type ContactFunctionResponse = { message?: string; error?: string };
+type AdminTab = "portfolio" | "assets";
+type UploadStatus = "idle" | "uploading" | "success";
+
+type ProjectRow = {
+  id: string;
+  title: string;
+  role: string;
+  category: string;
+  year: string;
+  poster_url: string;
+  video_url: string;
+  featured: boolean;
+};
+
+type ProductRow = {
+  id: string;
+  title: string;
+  category: string;
+  price: number;
+  cover_url: string;
+  description: string;
+  features: string[];
+  file_url?: string | null;
+  is_free: boolean;
+};
 
 const themeOptions: { value: ThemeMode; label: string; icon: typeof Monitor }[] = [
   { value: "system", label: "Device theme", icon: Monitor },
@@ -42,12 +70,74 @@ function getPortfolioCategoryLabel(category: PortfolioCategory) {
   return portfolioCategories.find((item) => item.value === category)?.label ?? category;
 }
 
+function mapProject(row: ProjectRow): Project {
+  return {
+    id: row.id,
+    title: row.title,
+    role: row.role,
+    category: row.category,
+    year: row.year,
+    posterUrl: row.poster_url,
+    videoUrl: row.video_url,
+    featured: row.featured,
+  };
+}
+
+function mapProduct(row: ProductRow): Product {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    price: Number(row.price),
+    coverUrl: row.cover_url,
+    description: row.description,
+    features: row.features ?? [],
+    fileUrl: row.file_url ?? undefined,
+    isFree: row.is_free,
+  };
+}
+
+function getUploadPath(file: File, folder: string) {
+  const extension = file.name.split(".").pop() || "bin";
+  const safeName = file.name
+    .replace(/\.[^/.]+$/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 48) || "upload";
+
+  return `${folder}/${Date.now()}-${safeName}.${extension}`;
+}
+
+async function getFunctionErrorMessage(error: unknown) {
+  const maybeError = error as { message?: string; context?: unknown };
+  const response = maybeError.context instanceof Response ? maybeError.context : null;
+
+  if (response) {
+    try {
+      const body = await response.clone().json() as ContactFunctionResponse;
+      if (body.error) {
+        return body.error;
+      }
+    } catch {
+      try {
+        const text = await response.clone().text();
+        if (text) {
+          return text;
+        }
+      } catch {
+        // Keep the original function error below.
+      }
+    }
+  }
+
+  return maybeError.message;
+}
+
 function App() {
   const [projects, setProjects] = useState<Project[]>(seedProjects);
   const [products, setProducts] = useState<Product[]>(seedProducts);
-  const [cartItem, setCartItem] = useState<Product | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const savedTheme = window.localStorage.getItem("editing-instance-theme");
     return savedTheme === "light" || savedTheme === "dark" || savedTheme === "system" ? savedTheme : "system";
@@ -58,19 +148,54 @@ function App() {
     window.localStorage.setItem("editing-instance-theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) {
+      return;
+    }
+
+    async function loadPublishedContent() {
+      const [projectResult, productResult] = await Promise.all([
+        supabase!
+          .from("portfolio_projects")
+          .select("id,title,role,category,year,poster_url,video_url,featured")
+          .order("created_at", { ascending: false }),
+        supabase!
+          .from("digital_products")
+          .select("id,title,category,price,cover_url,description,features,file_url,is_free")
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (projectResult.data?.length) {
+        setProjects(projectResult.data.map((row) => mapProject(row as ProjectRow)));
+      }
+
+      if (productResult.data?.length) {
+        setProducts(productResult.data.map((row) => mapProduct(row as ProductRow)));
+      }
+    }
+
+    void loadPublishedContent();
+  }, []);
+
+  function handleDownloadProduct(product: Product) {
+    if (product.fileUrl) {
+      window.open(product.fileUrl, "_blank");
+    }
+  }
+
   return (
     <div className="app-shell">
       <Nav menuOpen={menuOpen} theme={theme} onThemeChange={setTheme} onMenuToggle={() => setMenuOpen((value) => !value)} />
       {menuOpen && <MobileNav onClose={() => setMenuOpen(false)} />}
       <Routes>
-        <Route path="/" element={<Home products={products} projects={projects} onBuy={setCartItem} />} />
+        <Route path="/" element={<Home products={products} projects={projects} onDownload={handleDownloadProduct} />} />
         <Route path="/portfolio" element={<Portfolio projects={projects} />} />
-        <Route path="/services" element={<Services products={products} onBuy={setCartItem} />} />
+        <Route path="/services" element={<Services products={products} onDownload={handleDownloadProduct} />} />
+        <Route path="/contact" element={<Contact />} />
         <Route path="/about" element={<About />} />
-        <Route path="/admin" element={<Admin onAddProject={setProjects} onAddProduct={setProducts} customCategories={customCategories} onAddCategory={setCustomCategories} />} />
+        <Route path="/admin" element={<Admin onProjectCreated={(project) => setProjects((items) => [project, ...items])} onProductCreated={(product) => setProducts((items) => [product, ...items])} />} />
       </Routes>
       <Footer />
-      {cartItem && <CartDrawer product={cartItem} onClose={() => setCartItem(null)} />}
     </div>
   );
 }
@@ -96,7 +221,6 @@ function Nav({
               {item.label}
             </NavLink>
           ))}
-          <Link className="admin-link" to="/admin">Admin</Link>
         </div>
         <div className="theme-switch" aria-label="Theme preference">
           {themeOptions.map((option) => {
@@ -132,7 +256,6 @@ function MobileNav({ onClose }: { onClose: () => void }) {
           {item.label}
         </NavLink>
       ))}
-      <NavLink to="/admin" onClick={onClose}>Admin</NavLink>
     </div>
   );
 }
@@ -140,14 +263,22 @@ function MobileNav({ onClose }: { onClose: () => void }) {
 function Home({
   products,
   projects,
-  onBuy,
+  onDownload,
 }: {
   products: Product[];
   projects: Project[];
-  onBuy: (product: Product) => void;
+  onDownload: (product: Product) => void;
 }) {
-  const featured = products[0];
   const featuredProject = projects.find((project) => project.featured) ?? projects[0];
+  const categories = Array.from(new Set(products.map((product) => product.category)));
+
+  const sectionCopy: Record<string, string> = {
+    "Premium Text Animations": "High-end title sequences, motion typography, and callouts designed for fast editorial polish.",
+    "Free Motion Graphics": "Ready-to-use motion overlays, transitions, and graphics for quick edits and social stories.",
+    LUTs: "Color grading packs crafted for cinematic, wedding, and social workflows.",
+    Transitions: "Styled transition packs and motion bridges to level up every cut.",
+    "Editor Essentials": "Templates, presets, and workflow assets made for editors who need speed and quality.",
+  };
 
   return (
     <main className="fade-in">
@@ -162,39 +293,37 @@ function Home({
           <p>Editing, color, sound, and digital assets for brands, creators, and filmmakers who care about the final frame.</p>
           <div className="hero-actions">
             <Link className="primary-btn" to="/portfolio">View Work <ArrowRight size={16} /></Link>
-            <Link className="secondary-btn light" to="/services">Digital Products</Link>
+            <Link className="secondary-btn light" to="/services">Digital Assets</Link>
           </div>
         </div>
       </section>
 
-      <section className="section two-col">
-        <div>
-          <p className="eyebrow">Featured project</p>
-          <h2>Clean edits with cinematic restraint.</h2>
-          <p className="section-copy">Commercial cuts, wedding films, music videos, documentaries, and short-form social assets built around pacing, polish, and emotional clarity.</p>
-        </div>
-        <ProjectPreview project={featuredProject} />
-      </section>
+      <section className="section product-categories">
+        {categories.map((category) => {
+          const sectionProducts = products.filter((product) => product.category === category);
+          if (!sectionProducts.length) {
+            return null;
+          }
 
-      <section className="section product-heading">
-        <div>
-          <p className="eyebrow">Featured digital product</p>
-          <h2>{featured.title}</h2>
-        </div>
-      </section>
+          return (
+            <div className="product-category-section" key={category}>
+              <div className="category-header">
+                <div>
+                  <p className="eyebrow">{category}</p>
+                  <h2>{category}</h2>
+                  <p className="section-copy">{sectionCopy[category] ?? `Digital assets for ${category.toLowerCase()}.`}</p>
+                </div>
+                {category === "Free Motion Graphics" && <span className="badge">Free</span>}
+              </div>
 
-      <section className="section feature-band">
-        <div className="product-spotlight">
-          <img src={featured.coverUrl} alt={featured.title} loading="lazy" />
-          <div>
-            <p className="eyebrow">Featured digital product</p>
-            <h2>{featured.title}</h2>
-            <p>{featured.description}</p>
-            <button className="primary-btn" type="button" onClick={() => onBuy(featured)}>
-              Add to Bag <ShoppingBag size={16} />
-            </button>
-          </div>
-        </div>
+              <div className="product-category-grid">
+                {sectionProducts.map((product) => (
+                  <ProductCard key={product.id} product={product} onDownload={onDownload} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </section>
     </main>
   );
@@ -259,7 +388,7 @@ function Portfolio({ projects }: { projects: Project[] }) {
   );
 }
 
-function Services({ products, onBuy }: { products: Product[]; onBuy: (product: Product) => void }) {
+function Services({ products, onDownload }: { products: Product[]; onDownload: (product: Product) => void }) {
   const [filter, setFilter] = useState("All");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
@@ -270,7 +399,7 @@ function Services({ products, onBuy }: { products: Product[]; onBuy: (product: P
       <PageHeader
         eyebrow="Services and store"
         title="Post-production systems for sharper films."
-        copy="Hire Editing Instance for polished video work, or buy digital products that bring the same finishing language into your own timeline."
+        copy="Hire Editing Instance for polished video work, or buy digital assets that bring the same finishing language into your own timeline."
       />
       <section className="service-row">
         {["Commercial Editing", "Color Grading", "Short-form Systems"].map((service) => (
@@ -290,33 +419,47 @@ function Services({ products, onBuy }: { products: Product[]; onBuy: (product: P
       </div>
       <section className="store-grid">
         {visibleProducts.map((product) => (
-          <ProductCard key={product.id} product={product} onSelect={setSelectedProduct} />
+          <ProductCard key={product.id} product={product} onDownload={onDownload} />
         ))}
       </section>
-      {selectedProduct && (
-        <ProductDetail product={selectedProduct} onBuy={onBuy} onClose={() => setSelectedProduct(null)} />
-      )}
     </main>
   );
 }
+
 
 function About() {
   return (
     <main className="page fade-in">
       <PageHeader
         eyebrow="About Editing Instance"
-        title="A precise, modern editing studio for creators with taste."
-        copy="Editing Instance blends editorial discipline with product thinking: organized workflows, fast feedback, tasteful grading, and delivery systems that scale."
+        title="Professional Video Editing & Digital Assets"
+        copy="Crafted by Jyotish Kumar – a BCA graduate specializing in DaVinci Resolve video editing, motion graphics, color grading, and sound design. Providing professional editing solutions and premium digital assets to editors worldwide."
       />
       <section className="about-grid">
         <img src="https://images.unsplash.com/photo-1601506521937-0121a7fc2a6b?auto=format&fit=crop&w=1400&q=80" alt="Video editing suite" loading="lazy" />
         <div className="glass-card about-panel">
-          <h2>Built for serious visual work.</h2>
-          <p>Every project is handled with a clean pipeline: ingest, story assembly, pacing, polish, grade, sound, delivery, and archival. The goal is simple: make the work feel expensive, intentional, and effortless.</p>
-          <div className="stats">
-            <span><strong>5+</strong> edit categories</span>
-            <span><strong>24h</strong> response window</span>
-            <span><strong>4K</strong> delivery-ready</span>
+          <h2>About the Creator</h2>
+          <div className="about-content">
+            <div className="about-item">
+              <strong>Jyotish Kumar</strong>
+              <p>BCA Graduate | Professional Video Editor</p>
+            </div>
+            <div className="about-item">
+              <strong>Specialization</strong>
+              <p>DaVinci Resolve Editing • Motion Graphics • Color Grading • Sound Effects</p>
+            </div>
+            <div className="about-item">
+              <strong>Experience</strong>
+              <p>Professional editing experience from 2022 to present, with expertise in cinematic color grading, dynamic motion graphics, and immersive sound design.</p>
+            </div>
+            <div className="about-item">
+              <strong>Connect</strong>
+              <p><a href="mailto:kjyotish124@gmail.com">kjyotish124@gmail.com</a> • <a href="https://instagram.com/jk__editings" target="_blank" rel="noopener noreferrer">Instagram @jk__editings</a> (50k+ followers)</p>
+            </div>
+            <div className="about-item">
+              <strong>Mission</strong>
+              <p>Provide premium digital editing assets and professional workflows to empower creators worldwide. Every product is designed with broadcast quality and creative freedom in mind.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -324,159 +467,583 @@ function About() {
   );
 }
 
-function Admin({
-  onAddProject,
-  onAddProduct,
-  customCategories,
-  onAddCategory,
-}: {
-  onAddProject: React.Dispatch<React.SetStateAction<Project[]>>;
-  onAddProduct: React.Dispatch<React.SetStateAction<Product[]>>;
-  customCategories: string[];
-  onAddCategory: React.Dispatch<React.SetStateAction<string[]>>;
-}) {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("Use Supabase Auth to protect real uploads.");
-  const [busy, setBusy] = useState(false);
-  const [useCustomCategory, setUseCustomCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
+function Contact() {
+  const [formData, setFormData] = useState({ name: "", email: "", phone: "", message: "" });
+  const [status, setStatus] = useState<"idle" | "submitting" | "sent">("idle");
+  const [error, setError] = useState<string | null>(null);
 
-  async function sendMagicLink(event: FormEvent) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) {
-      setStatus("Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable secure admin auth.");
+    setError(null);
+
+    const name = formData.name.trim();
+    const email = formData.email.trim();
+    const phone = formData.phone.trim();
+    const message = formData.message.trim().replace(/<[^>]*>/g, "");
+
+    if (!name || !email || !phone || !message) {
+      setError("Please fill out every field.");
       return;
     }
-    setBusy(true);
-    const { error } = await supabase.auth.signInWithOtp({ email });
-    setBusy(false);
-    setStatus(error ? error.message : "Magic link sent. Check your inbox.");
-  }
 
-  function addDemoProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    let category: string;
-    
-    if (useCustomCategory) {
-      const customCat = String(form.get("customCategory") || "Untitled Category").trim();
-      category = customCat;
-      if (!customCategories.includes(customCat)) {
-        onAddCategory([...customCategories, customCat]);
-      }
-    } else {
-      category = String(form.get("category") || portfolioCategories[0].value);
+    if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
+      setError("Please enter a valid email address.");
+      return;
     }
-    
-    const title = String(form.get("title") || "Untitled Project");
-    const format = String(form.get("format") || "landscape") as NonNullable<Project["format"]>;
-    onAddProject((items) => [
-      {
-        id: crypto.randomUUID(),
-        title,
-        category,
-        format,
-        role: "Admin uploaded edit",
-        year: "2026",
-        posterUrl: String(form.get("posterUrl") || seedProjects[0].posterUrl),
-        videoUrl: String(form.get("videoUrl") || seedProjects[0].videoUrl),
-      },
-      ...items,
-    ]);
-    event.currentTarget.reset();
-    setUseCustomCategory(false);
-    setNewCategoryName("");
-    setStatus("Portfolio item added to this session. Connect Supabase storage for permanent uploads.");
-  }
 
-  function addDemoProduct(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    onAddProduct((items) => [
-      {
-        id: crypto.randomUUID(),
-        title: String(form.get("title") || "Untitled Product"),
-        category: String(form.get("category") || "LUTs") as Product["category"],
-        price: Number(form.get("price") || 49),
-        coverUrl: String(form.get("coverUrl") || seedProducts[0].coverUrl),
-        description: String(form.get("description") || "A premium digital product for editors."),
-        features: ["Secure download", "Instant delivery", "Commercial usage"],
-      },
-      ...items,
-    ]);
-    event.currentTarget.reset();
-    setStatus("Digital product added to this session. Supabase table writes are ready to wire after schema setup.");
+    if (!/^[+0-9][0-9\s-]{6,20}$/.test(phone)) {
+      setError("Please enter a valid phone or WhatsApp number.");
+      return;
+    }
+
+    if (message.length < 10 || message.length > 2000) {
+      setError("Message must be between 10 and 2000 characters.");
+      return;
+    }
+
+    if (!supabase || !isSupabaseConfigured) {
+      setError("Contact form is temporarily unavailable. Please try again later.");
+      return;
+    }
+
+    setStatus("submitting");
+
+    const payload = { name, email, phone, message };
+    const { data, error: functionError } = await supabase.functions.invoke<ContactFunctionResponse>("send-contact-email", {
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (functionError || data?.error) {
+      setError(data?.error || await getFunctionErrorMessage(functionError) || "Unable to deliver your message right now.");
+      setStatus("idle");
+      return;
+    }
+
+    setStatus("sent");
+    setFormData({ name: "", email: "", phone: "", message: "" });
+    setTimeout(() => setStatus("idle"), 4000);
   }
 
   return (
     <main className="page fade-in">
       <PageHeader
-        eyebrow="Admin panel"
-        title="Upload portfolio videos and digital products."
-        copy="A secure browser admin surface for Supabase Auth, storage, product metadata, and portfolio publishing."
+        eyebrow="Get in touch"
+        title="Let's work together."
+        copy="Reach out for editing services, licensing inquiries, or collaborations."
       />
-      <section className="admin-grid">
-        <form className="glass-card admin-card" onSubmit={sendMagicLink}>
-          <Lock size={22} />
-          <h3>Admin sign in</h3>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="admin@email.com" required />
-          <button className="primary-btn" type="submit" disabled={busy}>{busy ? "Sending..." : "Send magic link"}</button>
-          <p className="muted">{isSupabaseConfigured ? status : "Supabase is not configured yet. Demo publishing still works locally."}</p>
-        </form>
-
-        <form className="glass-card admin-card" onSubmit={addDemoProject}>
-          <Film size={22} />
-          <h3>Portfolio upload</h3>
-          <input name="title" placeholder="Project title" required />
-          <label style={{ display: "flex", gap: "8px", alignItems: "center", color: "var(--color-muted)", fontSize: "14px", cursor: "pointer", marginBottom: "8px" }}>
-            <input type="checkbox" checked={useCustomCategory} onChange={(e) => setUseCustomCategory(e.target.checked)} style={{ cursor: "pointer" }} />
-            Create new category
-          </label>
-          {useCustomCategory ? (
-            <input name="customCategory" placeholder="New category name" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} required />
+      <section className="contact-section">
+        <div className="contact-form glass-card">
+          {status === "sent" ? (
+            <div className="success-state">
+              <Check size={32} />
+              <h2>Message sent!</h2>
+              <p>Thanks for reaching out. You'll hear from me soon.</p>
+            </div>
           ) : (
-            <select name="category" defaultValue={portfolioCategories[0].value}>
-              {portfolioCategories.map((category) => (
-                <option key={category.value} value={category.value}>
-                  {category.label}
-                </option>
-              ))}
-              {customCategories.map((customCat) => (
-                <option key={customCat} value={customCat}>
-                  {customCat}
-                </option>
-              ))}
-            </select>
+            <form onSubmit={handleSubmit}>
+              <h2>Contact us</h2>
+              {error && <p className="form-error">{error}</p>}
+              <label>
+                Name
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  required
+                />
+              </label>
+              <label>
+                Phone / WhatsApp
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  placeholder="e.g. +1234567890"
+                  required
+                />
+              </label>
+              <label>
+                Message
+                <textarea
+                  value={formData.message}
+                  onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                  rows={6}
+                  required
+                />
+              </label>
+              <button className="primary-btn full" type="submit" disabled={status === "submitting"}>
+                {status === "submitting" ? "Sending..." : "Send message"}
+              </button>
+            </form>
           )}
-          <select name="format" defaultValue="landscape">
-            <option value="landscape">Landscape video</option>
-            <option value="portrait">Portrait video</option>
-          </select>
-          <input name="posterUrl" placeholder="Poster image URL" />
-          <input name="videoUrl" placeholder="Video preview URL" />
-          <button className="secondary-btn" type="submit"><UploadCloud size={16} /> Publish project</button>
-        </form>
-
-        <form className="glass-card admin-card" onSubmit={addDemoProduct}>
-          <Package size={22} />
-          <h3>Product upload</h3>
-          <input name="title" placeholder="Product title" required />
-          <select name="category" defaultValue="LUTs">
-            <option>LUTs</option>
-            <option>Premiere Plugins</option>
-            <option>Soundscapes</option>
-            <option>Presets</option>
-          </select>
-          <input name="price" placeholder="Price" type="number" min="1" />
-          <input name="coverUrl" placeholder="Cover image URL" />
-          <textarea name="description" placeholder="Product description" rows={4} />
-          <button className="secondary-btn" type="submit"><ImagePlus size={16} /> Publish product</button>
-        </form>
+        </div>
       </section>
-      <p className="admin-note">{status}</p>
     </main>
   );
 }
+
+function Admin({
+  onProjectCreated,
+  onProductCreated,
+}: {
+  onProjectCreated: (project: Project) => void;
+  onProductCreated: (product: Product) => void;
+}) {
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const [tab, setTab] = useState<AdminTab>("portfolio");
+  const [projectForm, setProjectForm] = useState<{
+    title: string;
+    role: string;
+    category: string;
+    year: string;
+    featured: boolean;
+  }>({
+    title: "",
+    role: "",
+    category: portfolioCategories[0].value,
+    year: String(new Date().getFullYear()),
+    featured: false,
+  });
+  const [productForm, setProductForm] = useState({
+    title: "",
+    category: "Premium Text Animations",
+    price: "0",
+    description: "",
+    features: "",
+    isFree: false,
+  });
+  const [projectVideo, setProjectVideo] = useState<File | null>(null);
+  const [projectPoster, setProjectPoster] = useState<File | null>(null);
+  const [productCover, setProductCover] = useState<File | null>(null);
+  const [productFile, setProductFile] = useState<File | null>(null);
+  const [status, setStatus] = useState<UploadStatus>("idle");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const productCategories = [
+    "Premium Text Animations",
+    "Free Motion Graphics",
+    "LUTs",
+    "Transitions",
+    "Editor Essentials",
+    "Premiere Plugins",
+    "Soundscapes",
+    "Presets",
+  ];
+
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) {
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSessionEmail(data.session?.user.email ?? null);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionEmail(session?.user.email ?? null);
+    });
+
+    return () => data.subscription.unsubscribe();
+  }, []);
+
+  async function uploadPublicFile(bucket: "portfolio" | "products", file: File, folder: string) {
+    if (!supabase) {
+      throw new Error("Supabase is not configured.");
+    }
+
+    const path = getUploadPath(file, folder);
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file, {
+      contentType: file.type || undefined,
+    });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  }
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+
+    if (!supabase || !isSupabaseConfigured) {
+      setError("Supabase is not configured. Add your project URL and anon key to .env first.");
+      return;
+    }
+
+    const { error: loginError } = await supabase.auth.signInWithPassword({
+      email: loginData.email.trim(),
+      password: loginData.password,
+    });
+
+    if (loginError) {
+      setError(loginError.message);
+      return;
+    }
+
+    setLoginData({ email: "", password: "" });
+  }
+
+  async function handleLogout() {
+    if (!supabase) {
+      return;
+    }
+
+    await supabase.auth.signOut();
+  }
+
+  async function handleProjectSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+
+    if (!supabase || !isSupabaseConfigured) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    if (!projectVideo || !projectPoster) {
+      setError("Choose both a portfolio video and poster image.");
+      return;
+    }
+
+    setStatus("uploading");
+
+    try {
+      const [videoUrl, posterUrl] = await Promise.all([
+        uploadPublicFile("portfolio", projectVideo, "videos"),
+        uploadPublicFile("portfolio", projectPoster, "posters"),
+      ]);
+
+      const payload = {
+        title: projectForm.title.trim(),
+        role: projectForm.role.trim() || "Video edit",
+        category: projectForm.category,
+        year: projectForm.year.trim() || String(new Date().getFullYear()),
+        poster_url: posterUrl,
+        video_url: videoUrl,
+        featured: projectForm.featured,
+      };
+
+      const { data, error: insertError } = await supabase
+        .from("portfolio_projects")
+        .insert(payload)
+        .select("id,title,role,category,year,poster_url,video_url,featured")
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      onProjectCreated(mapProject(data as ProjectRow));
+      setStatus("success");
+      setMessage("Portfolio video published.");
+      setProjectForm({
+        title: "",
+        role: "",
+        category: portfolioCategories[0].value,
+        year: String(new Date().getFullYear()),
+        featured: false,
+      });
+      setProjectVideo(null);
+      setProjectPoster(null);
+      event.currentTarget.reset();
+    } catch (uploadError) {
+      setError((uploadError as { message?: string }).message || "Unable to publish portfolio video.");
+      setStatus("idle");
+      return;
+    }
+
+    setTimeout(() => setStatus("idle"), 1600);
+  }
+
+  async function handleProductSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setMessage(null);
+
+    if (!supabase || !isSupabaseConfigured) {
+      setError("Supabase is not configured.");
+      return;
+    }
+
+    if (!productCover) {
+      setError("Choose a cover image for the asset.");
+      return;
+    }
+
+    const price = productForm.isFree ? 0 : Number(productForm.price);
+    if (!productForm.isFree && (!Number.isFinite(price) || price <= 0)) {
+      setError("Paid assets need a price greater than zero.");
+      return;
+    }
+
+    setStatus("uploading");
+
+    try {
+      const [coverUrl, fileUrl] = await Promise.all([
+        uploadPublicFile("products", productCover, "covers"),
+        productFile ? uploadPublicFile("products", productFile, "files") : Promise.resolve(undefined),
+      ]);
+
+      const payload = {
+        title: productForm.title.trim(),
+        category: productForm.category,
+        price,
+        cover_url: coverUrl,
+        description: productForm.description.trim(),
+        features: productForm.features
+          .split(/\n|,/)
+          .map((feature) => feature.trim())
+          .filter(Boolean),
+        file_url: fileUrl,
+        is_free: productForm.isFree,
+      };
+
+      const { data, error: insertError } = await supabase
+        .from("digital_products")
+        .insert(payload)
+        .select("id,title,category,price,cover_url,description,features,file_url,is_free")
+        .single();
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      onProductCreated(mapProduct(data as ProductRow));
+      setStatus("success");
+      setMessage("Digital asset published.");
+      setProductForm({
+        title: "",
+        category: "Premium Text Animations",
+        price: "0",
+        description: "",
+        features: "",
+        isFree: false,
+      });
+      setProductCover(null);
+      setProductFile(null);
+      event.currentTarget.reset();
+    } catch (uploadError) {
+      setError((uploadError as { message?: string }).message || "Unable to publish digital asset.");
+      setStatus("idle");
+      return;
+    }
+
+    setTimeout(() => setStatus("idle"), 1600);
+  }
+
+  if (!sessionEmail) {
+    return (
+      <main className="page fade-in">
+        <PageHeader
+          eyebrow="Admin"
+          title="Upload studio work."
+          copy="Sign in with an invited Supabase admin account to publish portfolio videos and downloadable editing assets."
+        />
+        <section className="admin-auth glass-card">
+          <form onSubmit={handleLogin}>
+            <LogIn size={26} />
+            <h2>Admin sign in</h2>
+            {error && <p className="form-error">{error}</p>}
+            <label>
+              Email
+              <input
+                type="email"
+                value={loginData.email}
+                onChange={(event) => setLoginData({ ...loginData, email: event.target.value })}
+                required
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                value={loginData.password}
+                onChange={(event) => setLoginData({ ...loginData, password: event.target.value })}
+                required
+              />
+            </label>
+            <button className="primary-btn full" type="submit">Sign in</button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="page fade-in">
+      <PageHeader
+        eyebrow="Admin"
+        title="Publish uploads."
+        copy="Upload portfolio videos, poster frames, product covers, and downloadable asset files directly into Supabase."
+      />
+      <div className="admin-toolbar">
+        <div className="filter-bar" aria-label="Admin upload type">
+          <button className={tab === "portfolio" ? "chip active" : "chip"} type="button" onClick={() => setTab("portfolio")}>
+            Portfolio videos
+          </button>
+          <button className={tab === "assets" ? "chip active" : "chip"} type="button" onClick={() => setTab("assets")}>
+            Digital assets
+          </button>
+        </div>
+        <button className="secondary-btn" type="button" onClick={handleLogout}>
+          <LogOut size={16} /> Sign out
+        </button>
+      </div>
+      {(error || message) && (
+        <p className={error ? "form-error admin-message" : "form-success admin-message"}>
+          {error || message}
+        </p>
+      )}
+
+      {tab === "portfolio" ? (
+        <section className="admin-layout">
+          <form className="glass-card admin-card admin-form" onSubmit={handleProjectSubmit}>
+            <FileVideo size={28} />
+            <h2>Portfolio video</h2>
+            <div className="admin-form-grid">
+              <label>
+                Title
+                <input value={projectForm.title} onChange={(event) => setProjectForm({ ...projectForm, title: event.target.value })} required />
+              </label>
+              <label>
+                Role / credit
+                <input value={projectForm.role} onChange={(event) => setProjectForm({ ...projectForm, role: event.target.value })} placeholder="Edit, Grade, Sound Design" />
+              </label>
+              <label>
+                Category
+                <select value={projectForm.category} onChange={(event) => setProjectForm({ ...projectForm, category: event.target.value })}>
+                  {portfolioCategories.map((category) => (
+                    <option key={category.value} value={category.value}>{category.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Year
+                <input value={projectForm.year} onChange={(event) => setProjectForm({ ...projectForm, year: event.target.value })} required />
+              </label>
+              <label>
+                Video file
+                <input type="file" accept="video/*" onChange={(event) => setProjectVideo(event.target.files?.[0] ?? null)} required />
+              </label>
+              <label>
+                Poster image
+                <input type="file" accept="image/*" onChange={(event) => setProjectPoster(event.target.files?.[0] ?? null)} required />
+              </label>
+            </div>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={projectForm.featured} onChange={(event) => setProjectForm({ ...projectForm, featured: event.target.checked })} />
+              Use as featured hero video
+            </label>
+            <button className="primary-btn full" type="submit" disabled={status === "uploading"}>
+              <UploadCloud size={16} /> {status === "uploading" ? "Uploading..." : "Publish video"}
+            </button>
+          </form>
+          <div className="admin-help">
+            <article className="glass-card admin-card">
+              <Image size={28} />
+              <h3>Storage target</h3>
+              <p>Videos and posters are uploaded to the public `portfolio` bucket, then saved to `portfolio_projects`.</p>
+            </article>
+            <article className="glass-card admin-card">
+              <Sparkles size={28} />
+              <h3>Live update</h3>
+              <p>Successful uploads appear in the portfolio immediately and will load from Supabase on future visits.</p>
+            </article>
+          </div>
+        </section>
+      ) : (
+        <section className="admin-layout">
+          <form className="glass-card admin-card admin-form" onSubmit={handleProductSubmit}>
+            <FileArchive size={28} />
+            <h2>Digital asset</h2>
+            <div className="admin-form-grid">
+              <label>
+                Title
+                <input value={productForm.title} onChange={(event) => setProductForm({ ...productForm, title: event.target.value })} required />
+              </label>
+              <label>
+                Category
+                <select value={productForm.category} onChange={(event) => setProductForm({ ...productForm, category: event.target.value })}>
+                  {productCategories.map((category) => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Price
+                <input
+                  min="0"
+                  step="0.01"
+                  type="number"
+                  value={productForm.price}
+                  onChange={(event) => setProductForm({ ...productForm, price: event.target.value })}
+                  disabled={productForm.isFree}
+                  required
+                />
+              </label>
+              <label>
+                Cover image
+                <input type="file" accept="image/*" onChange={(event) => setProductCover(event.target.files?.[0] ?? null)} required />
+              </label>
+              <label>
+                Asset file
+                <input type="file" onChange={(event) => setProductFile(event.target.files?.[0] ?? null)} />
+              </label>
+              <label>
+                Features
+                <textarea value={productForm.features} onChange={(event) => setProductForm({ ...productForm, features: event.target.value })} rows={4} placeholder="One feature per line" />
+              </label>
+            </div>
+            <label>
+              Description
+              <textarea value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} rows={5} required />
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={productForm.isFree}
+                onChange={(event) => setProductForm({ ...productForm, isFree: event.target.checked, price: event.target.checked ? "0" : productForm.price })}
+              />
+              Publish as a free download
+            </label>
+            <button className="primary-btn full" type="submit" disabled={status === "uploading"}>
+              <UploadCloud size={16} /> {status === "uploading" ? "Uploading..." : "Publish asset"}
+            </button>
+          </form>
+          <div className="admin-help">
+            <article className="glass-card admin-card">
+              <Image size={28} />
+              <h3>Product media</h3>
+              <p>Covers and downloadable files are uploaded to the public `products` bucket, then saved to `digital_products`.</p>
+            </article>
+            <article className="glass-card admin-card">
+              <Check size={28} />
+              <h3>Ready to sell</h3>
+              <p>New assets appear in Services and on the home product sections as soon as publishing finishes.</p>
+            </article>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
+
 
 function PageHeader({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
   return (
@@ -487,6 +1054,7 @@ function PageHeader({ eyebrow, title, copy }: { eyebrow: string; title: string; 
     </section>
   );
 }
+
 
 function ProjectPreview({ project }: { project: Project }) {
   return (
@@ -531,17 +1099,6 @@ function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: 
 }
 
 function Theater({ project, onClose }: { project: Project; onClose: () => void }) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.body.classList.add("modal-open");
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      document.body.classList.remove("modal-open");
-    };
-  }, []);
-
   return (
     <div className={project.format === "portrait" ? "theater portrait" : "theater"} role="dialog" aria-modal="true">
       <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close video">
@@ -554,122 +1111,37 @@ function Theater({ project, onClose }: { project: Project; onClose: () => void }
         <div className="theater-meta">
           <h2>{project.title}</h2>
           <p>{project.role} · {project.year}</p>
+          <Link className="secondary-btn" to="/contact">Get in touch <Mail size={16} /></Link>
         </div>
       </div>
     </div>
   );
 }
 
-function ProductCard({ product, onSelect }: { product: Product; onSelect: (product: Product) => void }) {
+function ProductCard({ product, onDownload, compact = false }: { product: Product; onDownload: (product: Product) => void; compact?: boolean }) {
   return (
-    <article className="glass-card product-card" onClick={() => onSelect(product)}>
-      <span className="price">${product.price}</span>
+    <article className={`glass-card service-card product-card${compact ? " compact" : ""}`} onClick={() => onDownload(product)}>
       <img src={product.coverUrl} alt={product.title} loading="lazy" />
-      <p className="eyebrow">{product.category}</p>
-      <h3>{product.title}</h3>
-      <p>{product.description}</p>
+      <div className="product-card-body">
+        <p className="eyebrow">{product.category}</p>
+        <h3>{product.title}</h3>
+        <p>{product.description}</p>
+      </div>
+      <div className="product-card-action">
+        <button className="secondary-btn full" type="button" onClick={(event) => { event.stopPropagation(); onDownload(product); }}>
+          Download
+        </button>
+      </div>
     </article>
   );
 }
 
-function ProductDetail({
-  product,
-  onBuy,
-  onClose,
-}: {
-  product: Product;
-  onBuy: (product: Product) => void;
-  onClose: () => void;
-}) {
-  const [slider, setSlider] = useState(58);
-
-  return (
-    <div className="product-modal" role="dialog" aria-modal="true">
-      <button className="icon-btn close" type="button" onClick={onClose} aria-label="Close product detail">
-        <X size={20} />
-      </button>
-      <div className="product-detail">
-        <div className="before-after">
-          <img src={product.coverUrl} alt={`${product.title} before preview`} />
-          <div className="after-layer" style={{ width: `${slider}%` }}>
-            <img src={product.coverUrl} alt={`${product.title} after preview`} />
-          </div>
-          <input value={slider} min="15" max="85" type="range" onChange={(event) => setSlider(Number(event.target.value))} aria-label="Before after preview slider" />
-        </div>
-        <div className="buy-box glass-card">
-          <p className="eyebrow">{product.category}</p>
-          <h2>{product.title}</h2>
-          <p>{product.description}</p>
-          <strong className="detail-price">${product.price}</strong>
-          <ul>
-            {product.features.map((feature) => (
-              <li key={feature}><Check size={17} /> {feature}</li>
-            ))}
-          </ul>
-          <button className="primary-btn full" type="button" onClick={() => onBuy(product)}>
-            Add to Bag <ShoppingBag size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CartDrawer({ product, onClose }: { product: Product; onClose: () => void }) {
-  const [paid, setPaid] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const total = useMemo(() => product.price.toFixed(2), [product.price]);
-
-  function pay(event: FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    window.setTimeout(() => {
-      setLoading(false);
-      setPaid(true);
-    }, 900);
-  }
-
-  return (
-    <aside className="cart-drawer" aria-label="Checkout">
-      <button className="icon-btn close" type="button" onClick={onClose} aria-label="Close cart">
-        <X size={20} />
-      </button>
-      {paid ? (
-        <div className="success-state">
-          <Check size={32} />
-          <h2>Order confirmed</h2>
-          <p>{product.title} is ready for digital delivery.</p>
-        </div>
-      ) : (
-        <form onSubmit={pay}>
-          <h2>Checkout</h2>
-          <div className="order-summary glass-card">
-            <img src={product.coverUrl} alt={product.title} />
-            <div>
-              <strong>{product.title}</strong>
-              <span>${total}</span>
-            </div>
-          </div>
-          <label>Card number<input required inputMode="numeric" placeholder="4242 4242 4242 4242" /></label>
-          <label>Name on card<input required placeholder="Editing Instance" /></label>
-          <div className="payment-grid">
-            <label>Expiry<input required placeholder="08/29" /></label>
-            <label>CVC<input required inputMode="numeric" placeholder="123" /></label>
-          </div>
-          <button className="primary-btn full" type="submit" disabled={loading}>
-            {loading ? "Processing..." : `Pay $${total}`}
-          </button>
-        </form>
-      )}
-    </aside>
-  );
-}
 
 function Footer() {
   return (
     <footer className="site-footer">
       <span>Editing Instance</span>
-      <span>Portfolio · Services · Digital Products</span>
+      <span>Portfolio · Services · Digital Assets</span>
     </footer>
   );
 }
