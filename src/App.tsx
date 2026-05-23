@@ -1,9 +1,10 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
   Check,
   Film,
+  Instagram,
   LogOut,
   Mail,
   Menu,
@@ -11,12 +12,15 @@ import {
   Moon,
   Package,
   Play,
+  Send,
   Sparkles,
   Sun,
   Upload,
   X,
+  Youtube,
 } from "lucide-react";
 import { products as seedProducts, projects as seedProjects } from "./data";
+import { PageHeader } from "./components/PageHeader";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { portfolioCategories } from "./types";
 import type { PortfolioCategory, Product, Project } from "./types";
@@ -201,6 +205,8 @@ function App() {
     const savedTheme = window.localStorage.getItem("editing-instance-theme");
     return savedTheme === "light" || savedTheme === "dark" || savedTheme === "system" ? savedTheme : "system";
   });
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [cartItem, setCartItem] = useState<Product | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -241,16 +247,14 @@ function App() {
   }, []);
 
   function handleDownloadProduct(product: Product) {
-    if (!product.fileUrl) {
-      return;
-    }
-
     if (product.isFree) {
-      void downloadFreeProduct(product);
+      if (product.fileUrl) {
+        void downloadFreeProduct(product);
+      }
       return;
     }
 
-    window.open(product.fileUrl, "_blank", "noopener");
+    setCartItem(product);
   }
 
   return (
@@ -258,10 +262,38 @@ function App() {
       <Nav menuOpen={menuOpen} theme={theme} onThemeChange={setTheme} onMenuToggle={() => setMenuOpen((value) => !value)} />
       {menuOpen && <MobileNav onClose={() => setMenuOpen(false)} />}
       <Routes>
-        <Route path="/" element={<Home products={products} projects={projects} onDownload={handleDownloadProduct} />} />
+        <Route
+          path="/"
+          element={
+            <Home
+              products={products}
+              projects={projects}
+              onDownload={handleDownloadProduct}
+              onSelectProduct={setSelectedProduct}
+            />
+          }
+        />
         <Route path="/portfolio" element={<Portfolio projects={projects} />} />
-        <Route path="/products" element={<Products products={products} onDownload={handleDownloadProduct} />} />
-        <Route path="/services" element={<Products products={products} onDownload={handleDownloadProduct} />} />
+        <Route
+          path="/products"
+          element={
+            <Products
+              products={products}
+              onDownload={handleDownloadProduct}
+              onSelectProduct={setSelectedProduct}
+            />
+          }
+        />
+        <Route
+          path="/services"
+          element={
+            <Products
+              products={products}
+              onDownload={handleDownloadProduct}
+              onSelectProduct={setSelectedProduct}
+            />
+          }
+        />
         <Route path="/contact" element={<Contact />} />
         <Route path="/about" element={<About />} />
         <Route
@@ -280,6 +312,23 @@ function App() {
           )}
         />
       </Routes>
+      {selectedProduct && (
+        <ProductDetailModal
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+          onBuy={(product) => {
+            setSelectedProduct(null);
+            setCartItem(product);
+          }}
+          onDownload={handleDownloadProduct}
+        />
+      )}
+      {cartItem && (
+        <CartDrawer
+          product={cartItem}
+          onClose={() => setCartItem(null)}
+        />
+      )}
       <Footer />
     </div>
   );
@@ -349,10 +398,12 @@ function Home({
   products,
   projects,
   onDownload,
+  onSelectProduct,
 }: {
   products: Product[];
   projects: Project[];
   onDownload: (product: Product) => void;
+  onSelectProduct: (product: Product) => void;
 }) {
   const featuredProject = projects.find((project) => project.featured && project.videoUrl)
     ?? projects.find((project) => project.videoUrl)
@@ -405,7 +456,12 @@ function Home({
 
               <div className="product-category-grid">
                 {sectionProducts.map((product) => (
-                  <ProductCard key={product.id} product={product} onDownload={onDownload} />
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onDownload={onDownload}
+                    onSelect={onSelectProduct}
+                  />
                 ))}
               </div>
               <Link className="secondary-btn category-link" to={`/products?category=${encodeURIComponent(category)}`}>
@@ -478,7 +534,15 @@ function Portfolio({ projects }: { projects: Project[] }) {
   );
 }
 
-function Products({ products, onDownload }: { products: Product[]; onDownload: (product: Product) => void }) {
+function Products({
+  products,
+  onDownload,
+  onSelectProduct,
+}: {
+  products: Product[];
+  onDownload: (product: Product) => void;
+  onSelectProduct: (product: Product) => void;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
   const categoryParam = searchParams.get("category");
@@ -514,7 +578,12 @@ function Products({ products, onDownload }: { products: Product[]; onDownload: (
       </div>
       <section className="store-grid">
         {visibleProducts.map((product) => (
-          <ProductCard key={product.id} product={product} onDownload={onDownload} />
+          <ProductCard
+            key={product.id}
+            product={product}
+            onDownload={onDownload}
+            onSelect={onSelectProduct}
+          />
         ))}
       </section>
     </main>
@@ -1652,17 +1721,6 @@ function Contact() {
 }
 
 
-function PageHeader({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
-  return (
-    <section className="page-header">
-      <p className="eyebrow">{eyebrow}</p>
-      <h1>{title}</h1>
-      <p>{copy}</p>
-    </section>
-  );
-}
-
-
 function ProjectPreview({ project }: { project: Project }) {
   return (
     <article className="preview-card">
@@ -1766,40 +1824,126 @@ function LutPreviewSlider({ product, compact = false }: { product: Product; comp
   );
 }
 
-function LutPreview({ product, onClose }: { product: Product; onClose: () => void }) {
+function ProductDetailModal({
+  product,
+  onClose,
+  onBuy,
+  onDownload,
+}: {
+  product: Product;
+  onClose: () => void;
+  onBuy: (product: Product) => void;
+  onDownload: (product: Product) => void;
+}) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.classList.add("modal-open");
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("modal-open");
+    };
+  }, []);
+
+  const hasLutPreview = isLutCategory(product.category) &&
+    Boolean(product.previewBeforeUrl && product.previewAfterUrl);
+
   return (
-    <div className="product-modal" role="dialog" aria-modal="true" aria-label={`${product.title} LUT preview`}>
-      <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close LUT preview">
+    <div className="product-modal" role="dialog" aria-modal="true" aria-label={`${product.title} details`}>
+      <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close product details">
         <X size={18} />
       </button>
       <div className="product-detail">
-        <LutPreviewSlider product={product} />
+        {hasLutPreview ? (
+          <LutPreviewSlider product={product} />
+        ) : (
+          <div className="before-after">
+            <img src={product.coverUrl} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </div>
+        )}
         <div className="glass-card buy-box lut-preview-meta">
-          <p className="eyebrow">LUT preview</p>
+          <p className="eyebrow">{product.category}</p>
           <h2>{product.title}</h2>
           <p>{product.description}</p>
-          <p className="muted">Drag the slider to compare the source frame with the graded LUT preview.</p>
+          <strong className="detail-price">{product.isFree ? "Free" : `$${product.price}`}</strong>
+          
+          {product.features && product.features.length > 0 && (
+            <ul>
+              {product.features.map((feature) => (
+                <li key={feature}>
+                  <Check size={17} /> {feature}
+                </li>
+              ))}
+            </ul>
+          )}
+          
+          <button
+            className="primary-btn full"
+            type="button"
+            onClick={() => {
+              if (product.isFree) {
+                onDownload(product);
+              } else {
+                onBuy(product);
+              }
+            }}
+          >
+            {product.isFree ? "Download" : `Buy Now — $${product.price}`}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function ProductCard({ product, onDownload, compact = false }: { product: Product; onDownload: (product: Product) => void; compact?: boolean }) {
-  const hasLutPreview = isLutCategory(product.category)
-    && Boolean(product.previewBeforeUrl && product.previewAfterUrl);
+function ProductCard({
+  product,
+  onDownload,
+  onSelect,
+  compact = false,
+}: {
+  product: Product;
+  onDownload: (product: Product) => void;
+  onSelect: (product: Product) => void;
+  compact?: boolean;
+}) {
+  const hasLutPreview = isLutCategory(product.category) &&
+    Boolean(product.previewBeforeUrl && product.previewAfterUrl);
 
   return (
-    <article className={`glass-card service-card product-card${compact ? " compact" : ""}`}>
-      {hasLutPreview ? <LutPreviewSlider product={product} compact /> : <img src={product.coverUrl} alt={product.title} loading="lazy" />}
+    <article
+      className={`glass-card service-card product-card${compact ? " compact" : ""}`}
+      onClick={() => onSelect(product)}
+      style={{ cursor: "pointer" }}
+    >
+      {product.isFree ? (
+        <span className="product-card-free-badge">Free</span>
+      ) : (
+        <span className="product-card-price-badge">${product.price}</span>
+      )}
+      {hasLutPreview ? (
+        <div onClick={(e) => e.stopPropagation()}>
+          <LutPreviewSlider product={product} compact />
+        </div>
+      ) : (
+        <img src={product.coverUrl} alt={product.title} loading="lazy" />
+      )}
       <div className="product-card-body">
         <p className="eyebrow">{product.category}</p>
         <h3>{product.title}</h3>
         <p>{product.description}</p>
       </div>
       <div className="product-card-action">
-        <button className="secondary-btn full" type="button" onClick={() => onDownload(product)}>
-          Download
+        <button
+          className="secondary-btn full"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDownload(product);
+          }}
+        >
+          {product.isFree ? "Download" : `Buy — $${product.price}`}
         </button>
       </div>
     </article>
@@ -1807,12 +1951,194 @@ function ProductCard({ product, onDownload, compact = false }: { product: Produc
 }
 
 
+function CartDrawer({ product, onClose }: { product: Product; onClose: () => void }) {
+  const [paid, setPaid] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const total = useMemo(() => product.price.toFixed(2), [product.price]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.classList.add("modal-open");
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("modal-open");
+    };
+  }, []);
+
+  function pay(event: FormEvent) {
+    event.preventDefault();
+    setLoading(true);
+    window.setTimeout(() => {
+      setLoading(false);
+      setPaid(true);
+    }, 1000);
+  }
+
+  return (
+    <aside className="cart-drawer" aria-label="Checkout">
+      <button className="icon-btn close" type="button" onClick={onClose} aria-label="Close cart">
+        <X size={20} />
+      </button>
+      {paid ? (
+        <div className="success-state">
+          <Check size={32} />
+          <h2>Order confirmed</h2>
+          <p>{product.title} is ready for digital delivery.</p>
+          {product.fileUrl ? (
+            <button
+              className="primary-btn"
+              type="button"
+              onClick={() => void downloadFreeProduct(product)}
+              style={{ marginTop: "16px" }}
+            >
+              Download Asset
+            </button>
+          ) : (
+            <p className="muted" style={{ fontSize: "14px", marginTop: "8px" }}>
+              A download link has been sent to your email.
+            </p>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={pay}>
+          <h2>Checkout</h2>
+          <div className="order-summary glass-card">
+            <img src={product.coverUrl} alt={product.title} />
+            <div>
+              <strong>{product.title}</strong>
+              <span>${total}</span>
+            </div>
+          </div>
+          <label>
+            Card number
+            <input required inputMode="numeric" placeholder="4242 4242 4242 4242" pattern="[0-9\s]{13,19}" title="Enter a valid card number" />
+          </label>
+          <label>
+            Name on card
+            <input required placeholder="Editing Instance" />
+          </label>
+          <div className="payment-grid">
+            <label>
+              Expiry
+              <input required placeholder="08/29" pattern="(0[1-9]|1[0-2])\/[0-9]{2}" title="MM/YY format" />
+            </label>
+            <label>
+              CVC
+              <input required inputMode="numeric" placeholder="123" pattern="[0-9]{3,4}" title="3 or 4 digit security code" />
+            </label>
+          </div>
+          <button className="primary-btn full" type="submit" disabled={loading}>
+            {loading ? "Processing..." : `Pay $${total}`}
+          </button>
+        </form>
+      )}
+    </aside>
+  );
+}
+
+
 
 function Footer() {
+  const [email, setEmail] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
+
+  const handleSubscribe = (e: FormEvent) => {
+    e.preventDefault();
+    if (email.trim()) {
+      setSubscribed(true);
+      setEmail("");
+      setTimeout(() => setSubscribed(false), 5000);
+    }
+  };
+
   return (
     <footer className="site-footer">
-      <span>Editing Instance</span>
-      <span>Portfolio · Services · Digital Assets</span>
+      <div className="footer-top">
+        {/* Brand Info */}
+        <div className="footer-column brand-column">
+          <Link className="footer-brand" to="/">
+            Editing Instance<span className="brand-dot"></span>
+          </Link>
+          <p className="footer-tagline">
+            Premium post-production tools, cinematic LUTs, and typography templates designed for creators, editors, and filmmakers who demand the highest quality.
+          </p>
+          <div className="footer-socials">
+            <a href="https://instagram.com/jk__editings" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+              <Instagram size={18} />
+            </a>
+            <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
+              <Youtube size={18} />
+            </a>
+            <a href="mailto:kjyotish124@gmail.com" aria-label="Email">
+              <Mail size={18} />
+            </a>
+          </div>
+        </div>
+
+        {/* Explore Links */}
+        <div className="footer-column">
+          <h4>Explore</h4>
+          <ul className="footer-links">
+            <li><Link to="/">Home</Link></li>
+            <li><Link to="/portfolio">Portfolio</Link></li>
+            <li><Link to="/products">Digital Assets</Link></li>
+            <li><Link to="/about">About Creator</Link></li>
+            <li><Link to="/contact">Get in Touch</Link></li>
+          </ul>
+        </div>
+
+        {/* Resources Columns */}
+        <div className="footer-column">
+          <h4>Resources</h4>
+          <ul className="footer-links">
+            <li><Link to="/products?category=LUTs">Cinematic LUTs</Link></li>
+            <li><Link to="/products?category=Premium%20Text%20Animations">Text Animations</Link></li>
+            <li><Link to="/products?category=Free%20Motion%20Graphics">Free Templates</Link></li>
+            <li><Link to="/products?category=Editor%20Essentials">Editor Essentials</Link></li>
+          </ul>
+        </div>
+
+        {/* Newsletter Column */}
+        <div className="footer-column newsletter-column">
+          <h4>Stay Updated</h4>
+          <p className="newsletter-text">Subscribe to receive free assets, presets, and tutorial updates directly to your inbox.</p>
+          {subscribed ? (
+            <div className="newsletter-success fade-in">
+              <Check size={16} />
+              <span>Subscribed successfully!</span>
+            </div>
+          ) : (
+            <form className="newsletter-form" onSubmit={handleSubscribe}>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                aria-label="Email address for newsletter"
+              />
+              <button type="submit" aria-label="Subscribe">
+                <Send size={14} />
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+
+      <div className="footer-bottom">
+        <div className="footer-bottom-left">
+          <span>&copy; {new Date().getFullYear()} Editing Instance. All rights reserved.</span>
+          <span className="footer-divider">|</span>
+          <span>Crafted by <a href="https://instagram.com/jk__editings" target="_blank" rel="noopener noreferrer" className="creator-link">Jyotish Kumar</a></span>
+        </div>
+        <div className="footer-bottom-right">
+          {/* <Link to="/contact">Privacy Policy</Link>
+          <Link to="/contact">Terms of Service</Link> */}
+          <Link to="/admin" className="admin-portal-link">Admin Portal</Link>
+        </div>
+      </div>
     </footer>
   );
 }
