@@ -272,6 +272,10 @@ function App() {
               projects={projects}
               onProductCreated={(product) => setProducts((current) => [product, ...current])}
               onProjectCreated={(project) => setProjects((current) => [project, ...current])}
+              onProductUpdated={(updated) => setProducts((current) => current.map((p) => p.id === updated.id ? updated : p))}
+              onProductDeleted={(id) => setProducts((current) => current.filter((p) => p.id !== id))}
+              onProjectUpdated={(updated) => setProjects((current) => current.map((p) => p.id === updated.id ? updated : p))}
+              onProjectDeleted={(id) => setProjects((current) => current.filter((p) => p.id !== id))}
             />
           )}
         />
@@ -418,12 +422,12 @@ function Home({
 function Portfolio({ projects }: { projects: Project[] }) {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<PortfolioFilter>("all");
-  
+
   // Get all unique categories from projects
   const allCategories = Array.from(new Set(projects.map((p) => p.category)));
   const predefinedCatValues = portfolioCategories.map((c) => c.value) as string[];
   const customCats = allCategories.filter((cat) => !(predefinedCatValues as string[]).includes(cat));
-  
+
   const visibleProjects = filter === "all" ? projects : projects.filter((project) => project.category === filter);
 
   const getCategoryLabel = (value: string): string => {
@@ -433,7 +437,7 @@ function Portfolio({ projects }: { projects: Project[] }) {
 
   return (
     <main className="page fade-in">
-      <PageHeader eyebrow="Portfolio" title="Selected Works" copy="A categorized reel of edits for brands, music artists, couples, founders, and documentary teams." />
+      <PageHeader eyebrow="Portfolio" title="Art of Editing & Storytelling" copy="Browse every editing category — from cinematic videos to reels, ads, gaming edits, documentaries, and more." />
       <div className="filter-bar portfolio-filter" aria-label="Portfolio category filters">
         <button className={filter === "all" ? "chip active" : "chip"} type="button" onClick={() => setFilter("all")}>
           All
@@ -576,11 +580,19 @@ function Admin({
   projects,
   onProductCreated,
   onProjectCreated,
+  onProductUpdated,
+  onProductDeleted,
+  onProjectUpdated,
+  onProjectDeleted,
 }: {
   products: Product[];
   projects: Project[];
   onProductCreated: (product: Product) => void;
   onProjectCreated: (project: Project) => void;
+  onProductUpdated: (product: Product) => void;
+  onProductDeleted: (productId: string) => void;
+  onProjectUpdated: (project: Project) => void;
+  onProjectDeleted: (projectId: string) => void;
 }) {
   const [mode, setMode] = useState<"products" | "portfolio">("products");
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
@@ -589,6 +601,9 @@ function Admin({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   const productCategories = Array.from(new Set(products.map((product) => product.category))).sort();
   const portfolioCategoryOptions = Array.from(new Set([
@@ -803,6 +818,70 @@ function Admin({
     }
   }
 
+  async function handleDeleteProduct(product: Product) {
+    if (!window.confirm(`Are you sure you want to delete "${product.title}"?`)) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setFormError(null);
+      setFormSuccess(null);
+
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
+
+      const { error } = await supabase
+        .from("digital_products")
+        .delete()
+        .eq("id", product.id);
+
+      if (error) {
+        throw error;
+      }
+
+      onProductDeleted(product.id);
+      setFormSuccess(`Successfully deleted "${product.title}".`);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to delete product.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteProject(project: Project) {
+    if (!window.confirm(`Are you sure you want to delete "${project.title}"?`)) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setFormError(null);
+      setFormSuccess(null);
+
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
+
+      const { error } = await supabase
+        .from("portfolio_projects")
+        .delete()
+        .eq("id", project.id);
+
+      if (error) {
+        throw error;
+      }
+
+      onProjectDeleted(project.id);
+      setFormSuccess(`Successfully deleted "${project.title}".`);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to delete portfolio project.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <main className="page fade-in">
@@ -863,128 +942,185 @@ function Admin({
       {formError && <p className="form-error admin-message">{formError}</p>}
       {formSuccess && <p className="form-success admin-message">{formSuccess}</p>}
       <section className="admin-layout">
-        {mode === "products" ? (
-          <form className="glass-card admin-form" onSubmit={handleProductUpload}>
-            <Package size={22} />
-            <h2>Create product</h2>
-            <div className="admin-form-grid">
+        <div className="admin-main-col">
+          {mode === "products" ? (
+            <form className="glass-card admin-form" onSubmit={handleProductUpload}>
+              <Package size={22} />
+              <h2>Create product</h2>
+              <div className="admin-form-grid">
+                <label>
+                  Title
+                  <input name="title" required />
+                </label>
+                <label>
+                  Price
+                  <input name="price" type="number" min="0" step="0.01" placeholder="49" />
+                </label>
+                <label>
+                  Existing category
+                  <select name="category" defaultValue="">
+                    <option value="">Choose category</option>
+                    {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Custom category
+                  <input name="custom-category" placeholder="New category name" />
+                </label>
+              </div>
               <label>
-                Title
-                <input name="title" required />
+                Description
+                <textarea name="description" rows={4} required />
               </label>
               <label>
-                Price
-                <input name="price" type="number" min="0" step="0.01" placeholder="49" />
+                Features
+                <textarea name="features" rows={4} placeholder="One feature per line" />
               </label>
-              <label>
-                Existing category
-                <select name="category" defaultValue="">
-                  <option value="">Choose category</option>
-                  {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
-                </select>
+              <div className="admin-form-grid">
+                <label>
+                  Cover image
+                  <input name="cover" type="file" accept="image/*" required />
+                </label>
+                <label>
+                  Download file
+                  <input name="asset" type="file" />
+                </label>
+              </div>
+              <div className="admin-form-grid">
+                <label>
+                  LUT preview before
+                  <input name="preview-before" type="file" accept="image/*" />
+                </label>
+                <label>
+                  LUT preview after
+                  <input name="preview-after" type="file" accept="image/*" />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input name="is-free" type="checkbox" />
+                Free product
               </label>
-              <label>
-                Custom category
-                <input name="custom-category" placeholder="New category name" />
+              <button className="primary-btn full" type="submit" disabled={saving}>
+                {saving ? "Uploading..." : "Publish product"}
+              </button>
+            </form>
+          ) : (
+            <form className="glass-card admin-form" onSubmit={handlePortfolioUpload}>
+              <Film size={22} />
+              <h2>Create portfolio video</h2>
+              <div className="admin-form-grid">
+                <label>
+                  Title
+                  <input name="title" required />
+                </label>
+                <label>
+                  Role
+                  <input name="role" placeholder="Edit, grade, sound design" />
+                </label>
+                <label>
+                  Existing category
+                  <select name="category" defaultValue="">
+                    <option value="">Choose category</option>
+                    {portfolioCategoryOptions.map((category) => (
+                      <option key={category} value={category}>{getPortfolioCategoryLabel(category)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Custom category
+                  <input name="custom-category" placeholder="New category name" />
+                </label>
+                <label>
+                  Year
+                  <input name="year" inputMode="numeric" placeholder={String(new Date().getFullYear())} />
+                </label>
+                <label>
+                  Video format
+                  <select name="format" defaultValue="landscape">
+                    <option value="landscape">Landscape</option>
+                    <option value="portrait">Portrait</option>
+                  </select>
+                </label>
+              </div>
+              <div className="admin-form-grid">
+                <label>
+                  Poster image
+                  <input name="poster" type="file" accept="image/*" required />
+                </label>
+                <label>
+                  Video file
+                  <input name="video" type="file" accept="video/*" />
+                </label>
+                <label>
+                  YouTube video link
+                  <input name="youtube-url" type="url" placeholder="https://youtu.be/..." />
+                </label>
+              </div>
+              <label className="checkbox-label">
+                <input name="featured" type="checkbox" />
+                Use as home hero video
               </label>
-            </div>
-            <label>
-              Description
-              <textarea name="description" rows={4} required />
-            </label>
-            <label>
-              Features
-              <textarea name="features" rows={4} placeholder="One feature per line" />
-            </label>
-            <div className="admin-form-grid">
-              <label>
-                Cover image
-                <input name="cover" type="file" accept="image/*" required />
-              </label>
-              <label>
-                Download file
-                <input name="asset" type="file" />
-              </label>
-            </div>
-            <div className="admin-form-grid">
-              <label>
-                LUT preview before
-                <input name="preview-before" type="file" accept="image/*" />
-              </label>
-              <label>
-                LUT preview after
-                <input name="preview-after" type="file" accept="image/*" />
-              </label>
-            </div>
-            <label className="checkbox-label">
-              <input name="is-free" type="checkbox" />
-              Free product
-            </label>
-            <button className="primary-btn full" type="submit" disabled={saving}>
-              {saving ? "Uploading..." : "Publish product"}
-            </button>
-          </form>
-        ) : (
-          <form className="glass-card admin-form" onSubmit={handlePortfolioUpload}>
-            <Film size={22} />
-            <h2>Create portfolio video</h2>
-            <div className="admin-form-grid">
-              <label>
-                Title
-                <input name="title" required />
-              </label>
-              <label>
-                Role
-                <input name="role" placeholder="Edit, grade, sound design" />
-              </label>
-              <label>
-                Existing category
-                <select name="category" defaultValue="">
-                  <option value="">Choose category</option>
-                  {portfolioCategoryOptions.map((category) => (
-                    <option key={category} value={category}>{getPortfolioCategoryLabel(category)}</option>
+              <button className="primary-btn full" type="submit" disabled={saving}>
+                {saving ? "Uploading..." : "Publish portfolio video"}
+              </button>
+            </form>
+          )}
+
+          {/* LIST VIEWS */}
+          {mode === "products" ? (
+            <div className="admin-list-section glass-card">
+              <div className="admin-list-header">
+                <Package size={16} />
+                <h3>All Products <span className="admin-count">({products.length})</span></h3>
+              </div>
+              {products.length === 0 ? (
+                <p className="empty-state">No products uploaded yet.</p>
+              ) : (
+                <div className="admin-mini-grid">
+                  {products.map((product) => (
+                    <div className="admin-mini-card" key={product.id}>
+                      <img src={product.coverUrl} alt={product.title} className="admin-mini-thumb" />
+                      <div className="admin-mini-body">
+                        <p className="admin-mini-title">{product.title}</p>
+                        <p className="admin-mini-meta">{product.category} · {product.isFree ? "Free" : `$${product.price}`}</p>
+                      </div>
+                      <div className="admin-mini-actions">
+                        <button className="admin-action-btn edit" type="button" title="Edit" onClick={() => setEditingProduct(product)}>Edit</button>
+                        <button className="admin-action-btn delete" type="button" title="Delete" onClick={() => void handleDeleteProduct(product)}>Del</button>
+                      </div>
+                    </div>
                   ))}
-                </select>
-              </label>
-              <label>
-                Custom category
-                <input name="custom-category" placeholder="New category name" />
-              </label>
-              <label>
-                Year
-                <input name="year" inputMode="numeric" placeholder={String(new Date().getFullYear())} />
-              </label>
-              <label>
-                Video format
-                <select name="format" defaultValue="landscape">
-                  <option value="landscape">Landscape</option>
-                  <option value="portrait">Portrait</option>
-                </select>
-              </label>
+                </div>
+              )}
             </div>
-            <div className="admin-form-grid">
-              <label>
-                Poster image
-                <input name="poster" type="file" accept="image/*" required />
-              </label>
-              <label>
-                Video file
-                <input name="video" type="file" accept="video/*" />
-              </label>
-              <label>
-                YouTube video link
-                <input name="youtube-url" type="url" placeholder="https://youtu.be/..." />
-              </label>
+          ) : (
+            <div className="admin-list-section glass-card">
+              <div className="admin-list-header">
+                <Film size={16} />
+                <h3>All Portfolio Videos <span className="admin-count">({projects.length})</span></h3>
+              </div>
+              {projects.length === 0 ? (
+                <p className="empty-state">No portfolio videos uploaded yet.</p>
+              ) : (
+                <div className="admin-mini-grid">
+                  {projects.map((project) => (
+                    <div className="admin-mini-card" key={project.id}>
+                      <img src={project.posterUrl} alt={project.title} className="admin-mini-thumb" />
+                      <div className="admin-mini-body">
+                        <p className="admin-mini-title">{project.title}</p>
+                        <p className="admin-mini-meta">{getPortfolioCategoryLabel(project.category)} · {project.year} · {project.format}</p>
+                      </div>
+                      <div className="admin-mini-actions">
+                        <button className="admin-action-btn edit" type="button" title="Edit" onClick={() => setEditingProject(project)}>Edit</button>
+                        <button className="admin-action-btn delete" type="button" title="Delete" onClick={() => void handleDeleteProject(project)}>Del</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <label className="checkbox-label">
-              <input name="featured" type="checkbox" />
-              Use as home hero video
-            </label>
-            <button className="primary-btn full" type="submit" disabled={saving}>
-              {saving ? "Uploading..." : "Publish portfolio video"}
-            </button>
-          </form>
-        )}
+          )}
+        </div>
         <aside className="admin-help">
           <article className="glass-card admin-card">
             <Package size={22} />
@@ -998,7 +1134,354 @@ function Admin({
           </article>
         </aside>
       </section>
+
+      {/* EDIT MODALS */}
+      {editingProduct && (
+        <EditProductModal
+          product={editingProduct}
+          productCategories={productCategories}
+          onClose={() => setEditingProduct(null)}
+          onProductUpdated={onProductUpdated}
+        />
+      )}
+      {editingProject && (
+        <EditProjectModal
+          project={editingProject}
+          portfolioCategoryOptions={portfolioCategoryOptions}
+          onClose={() => setEditingProject(null)}
+          onProjectUpdated={onProjectUpdated}
+        />
+      )}
     </main>
+  );
+}
+
+function EditProductModal({
+  product,
+  onClose,
+  onProductUpdated,
+  productCategories,
+}: {
+  product: Product;
+  onClose: () => void;
+  onProductUpdated: (product: Product) => void;
+  productCategories: string[];
+}) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isFree, setIsFree] = useState(product.isFree || false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+
+    if (!supabase) {
+      setFormError("Supabase is not configured.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setSaving(true);
+      const title = String(formData.get("title") || "").trim();
+      const description = String(formData.get("description") || "").trim();
+      const customCategory = String(formData.get("custom-category") || "").trim();
+      const category = getCategoryValue(formData, "category", "custom-category");
+      const price = isFree ? 0 : Number(formData.get("price"));
+      const cover = getOptionalFile(formData, "cover");
+      const asset = getOptionalFile(formData, "asset");
+      const previewBefore = getOptionalFile(formData, "preview-before");
+      const previewAfter = getOptionalFile(formData, "preview-after");
+      const features = String(formData.get("features") || "")
+        .split(/\n|,/)
+        .map((feature) => feature.trim())
+        .filter(Boolean);
+
+      if (!title || !description) {
+        throw new Error("Product title and description are required.");
+      }
+
+      if (!isFree && (!Number.isFinite(price) || price <= 0)) {
+        throw new Error("Paid products need a price greater than zero.");
+      }
+
+      if ((previewBefore && !previewAfter) || (!previewBefore && previewAfter)) {
+        throw new Error("Upload both LUT preview images: before and after.");
+      }
+
+      if (customCategory) {
+        const { error: categoryError } = await supabase
+          .from("product_categories")
+          .upsert({ name: category }, { onConflict: "name", ignoreDuplicates: true });
+
+        if (categoryError) {
+          throw new Error(`${categoryError.message}. Run the admin upload Supabase upgrade before creating custom product categories.`);
+        }
+      }
+
+      const [coverUrl, fileUrl, previewBeforeUrl, previewAfterUrl] = await Promise.all([
+        cover ? uploadPublicFile("products", "covers", cover) : Promise.resolve(undefined),
+        asset ? uploadPublicFile("products", "files", asset) : Promise.resolve(undefined),
+        previewBefore ? uploadPublicFile("products", "lut-preview-before", previewBefore) : Promise.resolve(undefined),
+        previewAfter ? uploadPublicFile("products", "lut-preview-after", previewAfter) : Promise.resolve(undefined),
+      ]);
+
+      const updatePayload: any = {
+        title,
+        category,
+        price,
+        description,
+        features,
+        is_free: isFree,
+      };
+
+      if (coverUrl) updatePayload.cover_url = coverUrl;
+      if (fileUrl !== undefined) updatePayload.file_url = fileUrl;
+      if (previewBeforeUrl !== undefined) updatePayload.preview_before_url = previewBeforeUrl;
+      if (previewAfterUrl !== undefined) updatePayload.preview_after_url = previewAfterUrl;
+
+      const { data, error } = await supabase
+        .from("digital_products")
+        .update(updatePayload)
+        .eq("id", product.id)
+        .select(productColumns)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      onProductUpdated(mapProduct(data as ProductRow));
+      onClose();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to update this product.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="product-modal admin-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit ${product.title}`}>
+      <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close edit">
+        <X size={18} />
+      </button>
+      <div className="admin-edit-panel glass-card">
+        <form className="admin-form" onSubmit={handleSubmit}>
+          <Package size={22} />
+          <h2>Edit Product</h2>
+          {formError && <p className="form-error">{formError}</p>}
+          <div className="admin-form-grid">
+            <label>
+              Title
+              <input name="title" defaultValue={product.title} required />
+            </label>
+            <label>
+              Price
+              <input name="price" type="number" min="0" step="0.01" defaultValue={product.price} disabled={isFree} />
+            </label>
+            <label>
+              Existing category
+              <select name="category" defaultValue={product.category}>
+                <option value="">Choose category</option>
+                {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </label>
+            <label>
+              Custom category
+              <input name="custom-category" placeholder="New category name" />
+            </label>
+          </div>
+          <label>
+            Description
+            <textarea name="description" rows={4} defaultValue={product.description} required />
+          </label>
+          <label>
+            Features
+            <textarea name="features" rows={4} placeholder="One feature per line" defaultValue={product.features.join("\n")} />
+          </label>
+          <div className="admin-form-grid">
+            <label>
+              Cover image (optional)
+              <input name="cover" type="file" accept="image/*" />
+            </label>
+            <label>
+              Download file (optional)
+              <input name="asset" type="file" />
+            </label>
+          </div>
+          <div className="admin-form-grid">
+            <label>
+              LUT preview before (optional)
+              <input name="preview-before" type="file" accept="image/*" />
+            </label>
+            <label>
+              LUT preview after (optional)
+              <input name="preview-after" type="file" accept="image/*" />
+            </label>
+          </div>
+          <label className="checkbox-label">
+            <input name="is-free" type="checkbox" checked={isFree} onChange={(e) => setIsFree(e.target.checked)} />
+            Free product
+          </label>
+          <button className="primary-btn full" type="submit" disabled={saving}>
+            {saving ? "Updating..." : "Save changes"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditProjectModal({
+  project,
+  onClose,
+  onProjectUpdated,
+  portfolioCategoryOptions,
+}: {
+  project: Project;
+  onClose: () => void;
+  onProjectUpdated: (project: Project) => void;
+  portfolioCategoryOptions: string[];
+}) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+
+    if (!supabase) {
+      setFormError("Supabase is not configured.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setSaving(true);
+      const title = String(formData.get("title") || "").trim();
+      const role = String(formData.get("role") || "").trim() || "Video edit";
+      const category = getCategoryValue(formData, "category", "custom-category");
+      const year = String(formData.get("year") || "").trim() || String(new Date().getFullYear());
+      const poster = getOptionalFile(formData, "poster");
+      const video = getOptionalFile(formData, "video");
+      const youtubeUrl = String(formData.get("youtube-url") || "").trim();
+      const format = formData.get("format") === "portrait" ? "portrait" : "landscape";
+      const featured = formData.get("featured") === "on";
+
+      if (!title) {
+        throw new Error("Portfolio title is required.");
+      }
+
+      const [posterUrl, videoUrl] = await Promise.all([
+        poster ? uploadPublicFile("portfolio", "posters", poster) : Promise.resolve(undefined),
+        video ? uploadPublicFile("portfolio", "videos", video) : Promise.resolve(undefined),
+      ]);
+
+      const updatePayload: any = {
+        title,
+        role,
+        category,
+        year,
+        youtube_url: youtubeUrl || null,
+        format,
+        featured,
+      };
+
+      if (posterUrl) updatePayload.poster_url = posterUrl;
+      if (videoUrl !== undefined) updatePayload.video_url = videoUrl;
+
+      const { data, error } = await supabase
+        .from("portfolio_projects")
+        .update(updatePayload)
+        .eq("id", project.id)
+        .select(projectColumns)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      onProjectUpdated(mapProject(data as ProjectRow));
+      onClose();
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to update this portfolio video.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="product-modal admin-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit ${project.title}`}>
+      <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close edit">
+        <X size={18} />
+      </button>
+      <div className="admin-edit-panel glass-card">
+        <form className="admin-form" onSubmit={handleSubmit}>
+          <Film size={22} />
+          <h2>Edit Portfolio Video</h2>
+          {formError && <p className="form-error">{formError}</p>}
+          <div className="admin-form-grid">
+            <label>
+              Title
+              <input name="title" defaultValue={project.title} required />
+            </label>
+            <label>
+              Role
+              <input name="role" placeholder="Edit, grade, sound design" defaultValue={project.role} />
+            </label>
+            <label>
+              Existing category
+              <select name="category" defaultValue={project.category}>
+                <option value="">Choose category</option>
+                {portfolioCategoryOptions.map((category) => (
+                  <option key={category} value={category}>{getPortfolioCategoryLabel(category)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Custom category
+              <input name="custom-category" placeholder="New category name" />
+            </label>
+            <label>
+              Year
+              <input name="year" inputMode="numeric" placeholder={String(new Date().getFullYear())} defaultValue={project.year} />
+            </label>
+            <label>
+              Video format
+              <select name="format" defaultValue={project.format}>
+                <option value="landscape">Landscape</option>
+                <option value="portrait">Portrait</option>
+              </select>
+            </label>
+          </div>
+          <div className="admin-form-grid">
+            <label>
+              Poster image (optional)
+              <input name="poster" type="file" accept="image/*" />
+            </label>
+            <label>
+              Video file (optional)
+              <input name="video" type="file" accept="video/*" />
+            </label>
+            <label>
+              YouTube video link (optional)
+              <input name="youtube-url" type="url" placeholder="https://youtu.be/..." defaultValue={project.youtubeUrl || ""} />
+            </label>
+          </div>
+          <label className="checkbox-label">
+            <input name="featured" type="checkbox" defaultChecked={project.featured} />
+            Use as home hero video
+          </label>
+          <button className="primary-btn full" type="submit" disabled={saving}>
+            {saving ? "Updating..." : "Save changes"}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
 
