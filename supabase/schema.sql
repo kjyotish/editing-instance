@@ -42,6 +42,20 @@ insert into public.product_categories (name) values
   ('Editor Essentials')
 on conflict (name) do nothing;
 
+create table if not exists public.portfolio_categories (
+  name text primary key,
+  description text,
+  created_at timestamptz not null default now()
+);
+
+insert into public.portfolio_categories (name) values
+  ('documentary-style'),
+  ('motion-graphics'),
+  ('cinematic'),
+  ('ugc-ad'),
+  ('ai-videos')
+on conflict (name) do nothing;
+
 create table if not exists public.digital_products (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -105,13 +119,23 @@ create policy "Public can read digital products"
   using (true);
 
 alter table public.product_categories enable row level security;
+alter table public.portfolio_categories enable row level security;
 
 create policy "Public can read product categories"
   on public.product_categories for select
   using (true);
 
+create policy "Public can read portfolio categories"
+  on public.portfolio_categories for select
+  using (true);
+
 create policy "Authenticated admins can manage product categories"
   on public.product_categories for all
+  using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
+
+create policy "Authenticated admins can manage portfolio categories"
+  on public.portfolio_categories for all
   using (auth.role() = 'authenticated')
   with check (auth.role() = 'authenticated');
 

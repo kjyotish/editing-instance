@@ -61,6 +61,9 @@ type ProductRow = {
   preview_after_url: string | null;
   is_free: boolean;
 };
+type PortfolioCategoryRow = {
+  name: string;
+};
 
 const projectColumns = "id,title,role,category,year,poster_url,video_url,youtube_url,format,featured";
 const productColumns = "id,title,category,price,cover_url,description,features,file_url,preview_before_url,preview_after_url,is_free";
@@ -109,6 +112,18 @@ function mapProduct(row: ProductRow): Product {
 function getFileExtension(file: File) {
   const extension = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "").toLowerCase();
   return extension || "file";
+}
+
+function getFriendlyErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+    return (error as { message: string }).message;
+  }
+
+  return fallback;
 }
 
 async function uploadPublicFile(bucket: "portfolio" | "products", folder: string, file: File) {
@@ -200,6 +215,9 @@ async function getFunctionErrorMessage(error: unknown) {
 function App() {
   const [projects, setProjects] = useState<Project[]>(seedProjects);
   const [products, setProducts] = useState<Product[]>(seedProducts);
+  const [portfolioCategoryNames, setPortfolioCategoryNames] = useState<string[]>(
+    portfolioCategories.map((category) => category.value),
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const savedTheme = window.localStorage.getItem("editing-instance-theme");
@@ -221,9 +239,10 @@ function App() {
     let mounted = true;
 
     async function loadPublicContent() {
-      const [projectResult, productResult] = await Promise.all([
+      const [projectResult, productResult, portfolioCategoryResult] = await Promise.all([
         supabase!.from("portfolio_projects").select(projectColumns).order("created_at", { ascending: false }),
         supabase!.from("digital_products").select(productColumns).order("created_at", { ascending: false }),
+        supabase!.from("portfolio_categories").select("name").order("created_at", { ascending: false }),
       ]);
 
       if (!mounted) {
@@ -236,6 +255,16 @@ function App() {
 
       if (!productResult.error && productResult.data?.length) {
         setProducts((productResult.data as ProductRow[]).map(mapProduct));
+      }
+
+      if (!portfolioCategoryResult.error) {
+        const loadedCategoryNames = ((portfolioCategoryResult.data as PortfolioCategoryRow[] | null | undefined) ?? []).map((row) => row.name);
+        const projectCategoryNames = (projectResult.data as ProjectRow[] | null | undefined)?.map((project) => project.category) ?? [];
+        setPortfolioCategoryNames(Array.from(new Set([
+          ...portfolioCategories.map((category) => category.value),
+          ...loadedCategoryNames,
+          ...projectCategoryNames,
+        ])).sort());
       }
     }
 
@@ -302,6 +331,10 @@ function App() {
             <Admin
               products={products}
               projects={projects}
+              portfolioCategoryNames={portfolioCategoryNames}
+              onPortfolioCategoryCreated={(category) => {
+                setPortfolioCategoryNames((current) => Array.from(new Set([...current, category])).sort());
+              }}
               onProductCreated={(product) => setProducts((current) => [product, ...current])}
               onProjectCreated={(project) => setProjects((current) => [project, ...current])}
               onProductUpdated={(updated) => setProducts((current) => current.map((p) => p.id === updated.id ? updated : p))}
@@ -647,6 +680,8 @@ function getYouTubeEmbedUrl(url: string | undefined) {
 function Admin({
   products,
   projects,
+  portfolioCategoryNames,
+  onPortfolioCategoryCreated,
   onProductCreated,
   onProjectCreated,
   onProductUpdated,
@@ -656,6 +691,8 @@ function Admin({
 }: {
   products: Product[];
   projects: Project[];
+  portfolioCategoryNames: string[];
+  onPortfolioCategoryCreated: (category: string) => void;
   onProductCreated: (product: Product) => void;
   onProjectCreated: (project: Project) => void;
   onProductUpdated: (product: Product) => void;
@@ -670,15 +707,28 @@ function Admin({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [portfolioCustomCategory, setPortfolioCustomCategory] = useState("");
 
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
   const productCategories = Array.from(new Set(products.map((product) => product.category))).sort();
   const portfolioCategoryOptions = Array.from(new Set([
-    ...portfolioCategories.map((category) => category.value),
+    ...portfolioCategoryNames,
     ...projects.map((project) => project.category),
-  ]));
+  ])).sort();
+
+  async function ensurePortfolioCategory(category: string) {
+    const { error } = await supabase!
+      .from("portfolio_categories")
+      .upsert({ name: category }, { onConflict: "name", ignoreDuplicates: true });
+
+    if (error) {
+      throw new Error(`${error.message}. Run the admin upload Supabase upgrade before creating custom portfolio categories.`);
+    }
+
+    onPortfolioCategoryCreated(category);
+  }
 
   useEffect(() => {
     if (!supabase || !isSupabaseConfigured) {
@@ -813,7 +863,7 @@ function Admin({
       form.reset();
       setFormSuccess(`Published ${title}.`);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Unable to upload this product.");
+      setFormError(getFriendlyErrorMessage(error, "Unable to upload this product."));
     } finally {
       setSaving(false);
     }
@@ -852,6 +902,10 @@ function Admin({
         throw new Error("Upload a video file or add a valid YouTube video link.");
       }
 
+      if (String(formData.get("custom-category") || "").trim()) {
+        await ensurePortfolioCategory(category);
+      }
+
       const [posterUrl, videoUrl] = await Promise.all([
         uploadPublicFile("portfolio", "posters", poster),
         video ? uploadPublicFile("portfolio", "videos", video) : Promise.resolve(undefined),
@@ -879,9 +933,10 @@ function Admin({
 
       onProjectCreated(mapProject(data as ProjectRow));
       form.reset();
+      setPortfolioCustomCategory("");
       setFormSuccess(`Published ${title}.`);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Unable to upload this portfolio video.");
+      setFormError(getFriendlyErrorMessage(error, "Unable to upload this portfolio video."));
     } finally {
       setSaving(false);
     }
@@ -1097,7 +1152,12 @@ function Admin({
                 </label>
                 <label>
                   Custom category
-                  <input name="custom-category" placeholder="New category name" />
+                  <input
+                    name="custom-category"
+                    placeholder="New category name"
+                    value={portfolioCustomCategory}
+                    onChange={(event) => setPortfolioCustomCategory(event.currentTarget.value)}
+                  />
                 </label>
                 <label>
                   Year
@@ -1217,6 +1277,7 @@ function Admin({
         <EditProjectModal
           project={editingProject}
           portfolioCategoryOptions={portfolioCategoryOptions}
+          ensurePortfolioCategory={ensurePortfolioCategory}
           onClose={() => setEditingProject(null)}
           onProjectUpdated={onProjectUpdated}
         />
@@ -1325,7 +1386,7 @@ function EditProductModal({
       onProductUpdated(mapProduct(data as ProductRow));
       onClose();
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Unable to update this product.");
+      setFormError(getFriendlyErrorMessage(error, "Unable to update this product."));
     } finally {
       setSaving(false);
     }
@@ -1408,11 +1469,13 @@ function EditProjectModal({
   onClose,
   onProjectUpdated,
   portfolioCategoryOptions,
+  ensurePortfolioCategory,
 }: {
   project: Project;
   onClose: () => void;
   onProjectUpdated: (project: Project) => void;
   portfolioCategoryOptions: string[];
+  ensurePortfolioCategory: (category: string) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -1443,6 +1506,10 @@ function EditProjectModal({
 
       if (!title) {
         throw new Error("Portfolio title is required.");
+      }
+
+      if (String(formData.get("custom-category") || "").trim()) {
+        await ensurePortfolioCategory(category);
       }
 
       const [posterUrl, videoUrl] = await Promise.all([
@@ -1477,7 +1544,7 @@ function EditProjectModal({
       onProjectUpdated(mapProject(data as ProjectRow));
       onClose();
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Unable to update this portfolio video.");
+      setFormError(getFriendlyErrorMessage(error, "Unable to update this portfolio video."));
     } finally {
       setSaving(false);
     }
