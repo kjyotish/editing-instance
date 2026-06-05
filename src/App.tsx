@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Check,
   Film,
+  FileText,
   Instagram,
   LogOut,
   Mail,
@@ -20,15 +21,24 @@ import {
   Youtube,
 } from "lucide-react";
 import { products as seedProducts, projects as seedProjects } from "./data";
+import {
+  AIScriptsPage,
+  DEFAULT_AI_SCRIPT_CATEGORIES,
+  DEFAULT_AI_SCRIPT_LANGUAGES,
+  getAIScriptCategoryLabel,
+  getAIScriptLanguageLabel,
+  replaceBusinessNameTokens,
+} from "./AIScripts";
 import { PageHeader } from "./components/PageHeader";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { portfolioCategories } from "./types";
-import type { PortfolioCategory, Product, Project } from "./types";
+import type { AIScript, PortfolioCategory, Product, Project } from "./types";
 
 const navItems = [
   { label: "Home", to: "/" },
   { label: "Portfolio", to: "/portfolio" },
   { label: "Products", to: "/products" },
+  { label: "Scripts", to: "/aiscripts" },
   { label: "About", to: "/about" },
   { label: "Contact", to: "/contact" },
 ];
@@ -64,9 +74,23 @@ type ProductRow = {
 type PortfolioCategoryRow = {
   name: string;
 };
+type AIScriptRow = {
+  id: string;
+  title: string;
+  category: string;
+  default_business_name: string;
+  language: string;
+  summary: string;
+  content: string;
+  created_at?: string;
+};
+type AIScriptCategoryRow = {
+  name: string;
+};
 
 const projectColumns = "id,title,role,category,year,poster_url,video_url,youtube_url,format,featured";
 const productColumns = "id,title,category,price,cover_url,description,features,file_url,preview_before_url,preview_after_url,is_free";
+const aiScriptColumns = "id,title,category,default_business_name,language,summary,content,created_at";
 
 const themeOptions: { value: ThemeMode; label: string; icon: typeof Monitor }[] = [
   { value: "system", label: "Device theme", icon: Monitor },
@@ -106,6 +130,19 @@ function mapProduct(row: ProductRow): Product {
     previewBeforeUrl: row.preview_before_url ?? undefined,
     previewAfterUrl: row.preview_after_url ?? undefined,
     isFree: row.is_free,
+  };
+}
+
+function mapAIScript(row: AIScriptRow): AIScript {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    defaultBusinessName: row.default_business_name || undefined,
+    language: row.language || undefined,
+    summary: row.summary,
+    content: row.content,
+    createdAt: row.created_at,
   };
 }
 
@@ -215,8 +252,12 @@ async function getFunctionErrorMessage(error: unknown) {
 function App() {
   const [projects, setProjects] = useState<Project[]>(seedProjects);
   const [products, setProducts] = useState<Product[]>(seedProducts);
+  const [scripts, setScripts] = useState<AIScript[]>([]);
   const [portfolioCategoryNames, setPortfolioCategoryNames] = useState<string[]>(
     portfolioCategories.map((category) => category.value),
+  );
+  const [aiScriptCategoryNames, setAIScriptCategoryNames] = useState<string[]>(
+    DEFAULT_AI_SCRIPT_CATEGORIES,
   );
   const [menuOpen, setMenuOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
@@ -239,10 +280,12 @@ function App() {
     let mounted = true;
 
     async function loadPublicContent() {
-      const [projectResult, productResult, portfolioCategoryResult] = await Promise.all([
+      const [projectResult, productResult, portfolioCategoryResult, scriptResult, scriptCategoryResult] = await Promise.all([
         supabase!.from("portfolio_projects").select(projectColumns).order("created_at", { ascending: false }),
         supabase!.from("digital_products").select(productColumns).order("created_at", { ascending: false }),
         supabase!.from("portfolio_categories").select("name").order("created_at", { ascending: false }),
+        supabase!.from("ai_scripts").select(aiScriptColumns).order("created_at", { ascending: false }),
+        supabase!.from("ai_script_categories").select("name").order("created_at", { ascending: false }),
       ]);
 
       if (!mounted) {
@@ -264,6 +307,20 @@ function App() {
           ...portfolioCategories.map((category) => category.value),
           ...loadedCategoryNames,
           ...projectCategoryNames,
+        ])).sort());
+      }
+
+      if (!scriptResult.error && scriptResult.data?.length) {
+        setScripts((scriptResult.data as AIScriptRow[]).map(mapAIScript));
+      }
+
+      if (!scriptCategoryResult.error) {
+        const loadedScriptCategoryNames = ((scriptCategoryResult.data as AIScriptCategoryRow[] | null | undefined) ?? []).map((row) => row.name);
+        const scriptCategoryNamesFromScripts = (scriptResult.data as AIScriptRow[] | null | undefined)?.map((script) => script.category) ?? [];
+        setAIScriptCategoryNames(Array.from(new Set([
+          ...DEFAULT_AI_SCRIPT_CATEGORIES,
+          ...loadedScriptCategoryNames,
+          ...scriptCategoryNamesFromScripts,
         ])).sort());
       }
     }
@@ -313,6 +370,7 @@ function App() {
             />
           }
         />
+        <Route path="/aiscripts" element={<AIScriptsPage scripts={scripts} />} />
         <Route
           path="/services"
           element={
@@ -331,10 +389,18 @@ function App() {
             <Admin
               products={products}
               projects={projects}
+              aiScriptCategoryNames={aiScriptCategoryNames}
+              scripts={scripts}
               portfolioCategoryNames={portfolioCategoryNames}
               onPortfolioCategoryCreated={(category) => {
                 setPortfolioCategoryNames((current) => Array.from(new Set([...current, category])).sort());
               }}
+              onAIScriptCategoryCreated={(category) => {
+                setAIScriptCategoryNames((current) => Array.from(new Set([...current, category])).sort());
+              }}
+              onScriptCreated={(script) => setScripts((current) => [script, ...current])}
+              onScriptUpdated={(updated) => setScripts((current) => current.map((script) => script.id === updated.id ? updated : script))}
+              onScriptDeleted={(id) => setScripts((current) => current.filter((script) => script.id !== id))}
               onProductCreated={(product) => setProducts((current) => [product, ...current])}
               onProjectCreated={(project) => setProjects((current) => [project, ...current])}
               onProductUpdated={(updated) => setProducts((current) => current.map((p) => p.id === updated.id ? updated : p))}
@@ -680,27 +746,39 @@ function getYouTubeEmbedUrl(url: string | undefined) {
 function Admin({
   products,
   projects,
+  scripts,
   portfolioCategoryNames,
+  aiScriptCategoryNames,
   onPortfolioCategoryCreated,
+  onAIScriptCategoryCreated,
   onProductCreated,
   onProjectCreated,
+  onScriptCreated,
   onProductUpdated,
   onProductDeleted,
   onProjectUpdated,
   onProjectDeleted,
+  onScriptUpdated,
+  onScriptDeleted,
 }: {
   products: Product[];
   projects: Project[];
+  scripts: AIScript[];
   portfolioCategoryNames: string[];
+  aiScriptCategoryNames: string[];
   onPortfolioCategoryCreated: (category: string) => void;
+  onAIScriptCategoryCreated: (category: string) => void;
   onProductCreated: (product: Product) => void;
   onProjectCreated: (project: Project) => void;
+  onScriptCreated: (script: AIScript) => void;
   onProductUpdated: (product: Product) => void;
   onProductDeleted: (productId: string) => void;
   onProjectUpdated: (project: Project) => void;
   onProjectDeleted: (projectId: string) => void;
+  onScriptUpdated: (script: AIScript) => void;
+  onScriptDeleted: (scriptId: string) => void;
 }) {
-  const [mode, setMode] = useState<"products" | "portfolio">("products");
+  const [mode, setMode] = useState<"products" | "portfolio" | "scripts">("products");
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -708,14 +786,21 @@ function Admin({
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [portfolioCustomCategory, setPortfolioCustomCategory] = useState("");
+  const [scriptCustomCategory, setScriptCustomCategory] = useState("");
 
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editingScript, setEditingScript] = useState<AIScript | null>(null);
 
   const productCategories = Array.from(new Set(products.map((product) => product.category))).sort();
   const portfolioCategoryOptions = Array.from(new Set([
     ...portfolioCategoryNames,
     ...projects.map((project) => project.category),
+  ])).sort();
+  const scriptCategoryOptions = Array.from(new Set([
+    ...DEFAULT_AI_SCRIPT_CATEGORIES,
+    ...aiScriptCategoryNames,
+    ...scripts.map((script) => script.category),
   ])).sort();
 
   async function ensurePortfolioCategory(category: string) {
@@ -728,6 +813,18 @@ function Admin({
     }
 
     onPortfolioCategoryCreated(category);
+  }
+
+  async function ensureAIScriptCategory(category: string) {
+    const { error } = await supabase!
+      .from("ai_script_categories")
+      .upsert({ name: category }, { onConflict: "name", ignoreDuplicates: true });
+
+    if (error) {
+      throw new Error(`${error.message}. Run the admin upload Supabase upgrade before creating custom script categories.`);
+    }
+
+    onAIScriptCategoryCreated(category);
   }
 
   useEffect(() => {
@@ -942,6 +1039,67 @@ function Admin({
     }
   }
 
+  async function handleScriptUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+    setFormSuccess(null);
+
+    if (!supabase) {
+      setFormError("Supabase is not configured.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setSaving(true);
+      const title = String(formData.get("title") || "").trim();
+      const defaultBusinessName = String(formData.get("default-business-name") || "").trim();
+      const language = String(formData.get("language") || "").trim();
+      const summary = String(formData.get("summary") || "").trim();
+      const content = String(formData.get("content") || "").trim();
+      const category = getCategoryValue(formData, "category", "custom-category");
+      const customCategory = String(formData.get("custom-category") || "").trim();
+
+      if (!title || !summary || !content || !defaultBusinessName || !language) {
+        throw new Error("Script title, business name, language, summary, and content are required.");
+      }
+
+      if (customCategory) {
+        await ensureAIScriptCategory(category);
+      }
+
+      const renderedContent = replaceBusinessNameTokens(content, defaultBusinessName);
+
+      const { data, error } = await supabase
+        .from("ai_scripts")
+        .insert({
+          title,
+          category,
+          default_business_name: defaultBusinessName,
+          language,
+          summary,
+          content: renderedContent,
+        })
+        .select(aiScriptColumns)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      onScriptCreated(mapAIScript(data as AIScriptRow));
+      form.reset();
+      setScriptCustomCategory("");
+      setFormSuccess(`Published ${title}.`);
+    } catch (error) {
+      setFormError(getFriendlyErrorMessage(error, "Unable to upload this script."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDeleteProduct(product: Product) {
     if (!window.confirm(`Are you sure you want to delete "${product.title}"?`)) {
       return;
@@ -1006,6 +1164,38 @@ function Admin({
     }
   }
 
+  async function handleDeleteScript(script: AIScript) {
+    if (!window.confirm(`Are you sure you want to delete "${script.title}"?`)) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setFormError(null);
+      setFormSuccess(null);
+
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
+
+      const { error } = await supabase
+        .from("ai_scripts")
+        .delete()
+        .eq("id", script.id);
+
+      if (error) {
+        throw error;
+      }
+
+      onScriptDeleted(script.id);
+      setFormSuccess(`Successfully deleted "${script.title}".`);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Unable to delete script.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <main className="page fade-in">
@@ -1049,7 +1239,7 @@ function Admin({
 
   return (
     <main className="page fade-in">
-      <PageHeader eyebrow="Admin" title="Publish products and portfolio videos." copy="Create categories as you upload. Public pages read the uploaded records from Supabase." />
+      <PageHeader eyebrow="Admin" title="Publish products, portfolio videos, and AI scripts." copy="Create categories as you upload. Public pages read the uploaded records from Supabase." />
       <div className="admin-toolbar">
         <div className="filter-bar" aria-label="Admin upload type">
           <button className={mode === "products" ? "chip active" : "chip"} type="button" onClick={() => setMode("products")}>
@@ -1057,6 +1247,9 @@ function Admin({
           </button>
           <button className={mode === "portfolio" ? "chip active" : "chip"} type="button" onClick={() => setMode("portfolio")}>
             Portfolio videos
+          </button>
+          <button className={mode === "scripts" ? "chip active" : "chip"} type="button" onClick={() => setMode("scripts")}>
+            AI scripts
           </button>
         </div>
         <button className="secondary-btn" type="button" onClick={() => void supabase?.auth.signOut()}>
@@ -1128,7 +1321,7 @@ function Admin({
                 {saving ? "Uploading..." : "Publish product"}
               </button>
             </form>
-          ) : (
+          ) : mode === "portfolio" ? (
             <form className="glass-card admin-form" onSubmit={handlePortfolioUpload}>
               <Film size={22} />
               <h2>Create portfolio video</h2>
@@ -1193,6 +1386,69 @@ function Admin({
                 {saving ? "Uploading..." : "Publish portfolio video"}
               </button>
             </form>
+          ) : (
+            <form className="glass-card admin-form" onSubmit={handleScriptUpload}>
+              <FileText size={22} />
+              <h2>Create AI script</h2>
+              <p className="section-copy">
+                Use <code>{`{{business_name}}`}</code> anywhere in the body so users can personalize the PDF before downloading.
+              </p>
+              <div className="admin-form-grid">
+                <label>
+                  Title
+                  <input name="title" required />
+                </label>
+                <label>
+                  Default business name
+                  <input
+                    name="default-business-name"
+                    placeholder="Your studio name"
+                    required
+                  />
+                </label>
+                <label>
+                  Language
+                  <select name="language" defaultValue="English">
+                    {DEFAULT_AI_SCRIPT_LANGUAGES.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Existing category
+                  <select name="category" defaultValue={scriptCategoryOptions[0] ?? ""}>
+                    {scriptCategoryOptions.map((category) => (
+                      <option key={category} value={category}>{getAIScriptCategoryLabel(category)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Custom category
+                  <input
+                    name="custom-category"
+                    placeholder="New category name"
+                    value={scriptCustomCategory}
+                    onChange={(event) => setScriptCustomCategory(event.currentTarget.value)}
+                  />
+                </label>
+              </div>
+              <label>
+                Summary
+                <textarea name="summary" rows={3} placeholder="Short description shown on the card" required />
+              </label>
+              <label>
+                Script content
+                <textarea
+                  name="content"
+                  rows={12}
+                  placeholder="Write the script here and place {{business_name}} where the client name should appear."
+                  required
+                />
+              </label>
+              <button className="primary-btn full" type="submit" disabled={saving}>
+                {saving ? "Uploading..." : "Publish AI script"}
+              </button>
+            </form>
           )}
 
           {/* LIST VIEWS */}
@@ -1222,7 +1478,7 @@ function Admin({
                 </div>
               )}
             </div>
-          ) : (
+          ) : mode === "portfolio" ? (
             <div className="admin-list-section glass-card">
               <div className="admin-list-header">
                 <Film size={16} />
@@ -1248,6 +1504,34 @@ function Admin({
                 </div>
               )}
             </div>
+          ) : (
+            <div className="admin-list-section glass-card">
+              <div className="admin-list-header">
+                <FileText size={16} />
+                <h3>All AI Scripts <span className="admin-count">({scripts.length})</span></h3>
+              </div>
+              {scripts.length === 0 ? (
+                <p className="empty-state">No AI scripts uploaded yet.</p>
+              ) : (
+                <div className="admin-mini-grid">
+                  {scripts.map((script) => (
+                    <div className="admin-mini-card script-mini-card" key={script.id}>
+                      <div className="admin-mini-body">
+                        <p className="admin-mini-title">{script.title}</p>
+                        <p className="admin-mini-meta">
+                          {getAIScriptCategoryLabel(script.category)} · {getAIScriptLanguageLabel(script.language || "English")} · {script.defaultBusinessName || "No business name"}
+                        </p>
+                        <p className="admin-mini-summary">{script.summary}</p>
+                      </div>
+                      <div className="admin-mini-actions">
+                        <button className="admin-action-btn edit" type="button" title="Edit" onClick={() => setEditingScript(script)}>Edit</button>
+                        <button className="admin-action-btn delete" type="button" title="Delete" onClick={() => void handleDeleteScript(script)}>Del</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
         <aside className="admin-help">
@@ -1260,6 +1544,11 @@ function Admin({
             <Film size={22} />
             <h3>Portfolio categories</h3>
             <p>Choose a listed category or type a custom category for a new portfolio group. Portrait format keeps vertical videos framed on the public portfolio grid.</p>
+          </article>
+          <article className="glass-card admin-card">
+            <FileText size={22} />
+            <h3>AI script placeholders</h3>
+            <p>Use <code>{`{{business_name}}`}</code> in your script body. Users can swap in their own business name before downloading the PDF.</p>
           </article>
         </aside>
       </section>
@@ -1280,6 +1569,15 @@ function Admin({
           ensurePortfolioCategory={ensurePortfolioCategory}
           onClose={() => setEditingProject(null)}
           onProjectUpdated={onProjectUpdated}
+        />
+      )}
+      {editingScript && (
+        <EditAIScriptModal
+          script={editingScript}
+          scriptCategoryOptions={scriptCategoryOptions}
+          ensureAIScriptCategory={ensureAIScriptCategory}
+          onClose={() => setEditingScript(null)}
+          onScriptUpdated={onScriptUpdated}
         />
       )}
     </main>
@@ -1611,6 +1909,154 @@ function EditProjectModal({
           <label className="checkbox-label">
             <input name="featured" type="checkbox" defaultChecked={project.featured} />
             Use as home hero video
+          </label>
+          <button className="primary-btn full" type="submit" disabled={saving}>
+            {saving ? "Updating..." : "Save changes"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditAIScriptModal({
+  script,
+  onClose,
+  onScriptUpdated,
+  scriptCategoryOptions,
+  ensureAIScriptCategory,
+}: {
+  script: AIScript;
+  onClose: () => void;
+  onScriptUpdated: (script: AIScript) => void;
+  scriptCategoryOptions: string[];
+  ensureAIScriptCategory: (category: string) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError(null);
+
+    if (!supabase) {
+      setFormError("Supabase is not configured.");
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      setSaving(true);
+      const title = String(formData.get("title") || "").trim();
+      const defaultBusinessName = String(formData.get("default-business-name") || "").trim();
+      const language = String(formData.get("language") || "").trim();
+      const summary = String(formData.get("summary") || "").trim();
+      const content = String(formData.get("content") || "").trim();
+      const category = getCategoryValue(formData, "category", "custom-category");
+      const customCategory = String(formData.get("custom-category") || "").trim();
+
+      if (!title || !summary || !content || !defaultBusinessName || !language) {
+        throw new Error("Script title, business name, language, summary, and content are required.");
+      }
+
+      if (customCategory) {
+        await ensureAIScriptCategory(category);
+      }
+
+      const existingBusinessName = script.defaultBusinessName?.trim() || "";
+      const shiftedContent = existingBusinessName
+        ? content.split(existingBusinessName).join(defaultBusinessName)
+        : content;
+      const renderedContent = replaceBusinessNameTokens(shiftedContent, defaultBusinessName);
+
+      const { data, error } = await supabase
+        .from("ai_scripts")
+        .update({
+          title,
+          category,
+          default_business_name: defaultBusinessName,
+          language,
+          summary,
+          content: renderedContent,
+        })
+        .eq("id", script.id)
+        .select(aiScriptColumns)
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      onScriptUpdated(mapAIScript(data as AIScriptRow));
+      onClose();
+    } catch (error) {
+      setFormError(getFriendlyErrorMessage(error, "Unable to update this script."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="product-modal admin-edit-modal" role="dialog" aria-modal="true" aria-label={`Edit ${script.title}`}>
+      <button className="icon-btn close theater-close" type="button" onClick={onClose} aria-label="Close edit">
+        <X size={18} />
+      </button>
+      <div className="admin-edit-panel glass-card">
+        <form className="admin-form" onSubmit={handleSubmit}>
+          <FileText size={22} />
+          <h2>Edit AI Script</h2>
+          {formError && <p className="form-error">{formError}</p>}
+          <div className="admin-form-grid">
+            <label>
+              Title
+              <input name="title" defaultValue={script.title} required />
+            </label>
+            <label>
+              Default business name
+              <input
+                name="default-business-name"
+                placeholder="Your studio name"
+                defaultValue={script.defaultBusinessName || ""}
+                required
+              />
+            </label>
+            <label>
+              Language
+              <select name="language" defaultValue={script.language || "English"}>
+                {DEFAULT_AI_SCRIPT_LANGUAGES.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Existing category
+              <select name="category" defaultValue={script.category}>
+                <option value="">Choose category</option>
+                {scriptCategoryOptions.map((category) => (
+                  <option key={category} value={category}>{getAIScriptCategoryLabel(category)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Custom category
+              <input name="custom-category" placeholder="New category name" />
+            </label>
+          </div>
+          <label>
+            Summary
+            <textarea name="summary" rows={3} defaultValue={script.summary} required />
+          </label>
+          <label>
+            Script content
+            <textarea
+              name="content"
+              rows={12}
+              defaultValue={script.content}
+              placeholder="Use {{business_name}} wherever the client name should appear."
+              required
+            />
           </label>
           <button className="primary-btn full" type="submit" disabled={saving}>
             {saving ? "Updating..." : "Save changes"}
