@@ -9,6 +9,7 @@ export const portfolioCategories = [
 export type PortfolioCategory = (typeof portfolioCategories)[number]["value"] | string;
 
 export type ProductCategory = string;
+export type AIScriptCategory = string;
 
 export type Project = {
   id: string;
@@ -35,4 +36,15 @@ export type Product = {
   previewBeforeUrl?: string;
   previewAfterUrl?: string;
   isFree?: boolean;
+};
+
+export type AIScript = {
+  id: string;
+  title: string;
+  category: AIScriptCategory;
+  defaultBusinessName?: string;
+  language?: string;
+  summary: string;
+  content: string;
+  createdAt?: string;
 };
