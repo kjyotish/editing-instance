@@ -182,12 +182,12 @@ export function downloadAIScriptPdf(
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
+  iframe.style.inset = "0";
+  iframe.style.width = "1px";
+  iframe.style.height = "1px";
   iframe.style.border = "0";
   iframe.style.opacity = "0";
+  iframe.style.pointerEvents = "none";
   iframe.srcdoc = html;
 
   const cleanup = () => {
@@ -196,19 +196,19 @@ export function downloadAIScriptPdf(
 
   iframe.onload = () => {
     const frameWindow = iframe.contentWindow;
-
     if (!frameWindow) {
       cleanup();
       return;
     }
 
+    frameWindow.focus();
     try {
-      frameWindow.focus();
-      frameWindow.addEventListener("afterprint", cleanup, { once: true });
       frameWindow.print();
     } catch {
-      cleanup();
+      // Some browsers may block print; still cleanup.
     }
+
+    setTimeout(cleanup, 500);
   };
 
   document.body.appendChild(iframe);
@@ -504,7 +504,7 @@ function buildPrintableHtml({
   const safeTitle = escapeHtml(title);
   const safeCategory = escapeHtml(category);
   const safeBusinessName = escapeHtml(businessName);
-  const safeSummary = escapeHtml(summary);
+  const safeSummary = escapeHtml(summary || "No summary provided.");
   const safeContent = escapeHtml(content).replace(/\n/g, "<br />");
 
   return `<!doctype html>
@@ -518,21 +518,19 @@ function buildPrintableHtml({
     html, body {
       margin: 0;
       padding: 0;
-      background: #f5f5f7;
-      color: #1d1d1f;
-      font-family: Inter, Arial, sans-serif;
-    }
-    body { padding: 32px; }
-    .page {
-      max-width: 840px;
-      margin: 0 auto;
       background: #fff;
-      border: 1px solid rgba(0,0,0,0.08);
-      border-radius: 20px;
-      padding: 32px;
+      color: #111827;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    body { padding: 24px; }
+    article {
+      max-width: 780px;
+      margin: 0 auto;
     }
     .eyebrow {
-      margin: 0 0 12px;
+      margin: 0 0 8px;
       font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -540,53 +538,55 @@ function buildPrintableHtml({
       color: #6b7280;
     }
     h1 {
-      margin: 0 0 10px;
-      font-size: 32px;
+      margin: 0 0 12px;
+      font-size: 28px;
       line-height: 1.1;
+      font-weight: 800;
     }
     .meta {
       display: grid;
-      gap: 6px;
-      margin-bottom: 24px;
-      color: #4b5563;
-      font-size: 14px;
+      gap: 8px;
+      margin-bottom: 20px;
+      color: #374151;
+      font-size: 13px;
     }
     .summary {
-      margin: 0 0 20px;
-      font-size: 16px;
-      line-height: 1.7;
+      margin: 0 0 18px;
+      font-size: 15px;
       white-space: pre-wrap;
     }
     .content {
-      font-size: 16px;
-      line-height: 1.8;
-      white-space: normal;
+      font-size: 15px;
+      white-space: pre-wrap;
       word-break: break-word;
     }
-    .content br { content: ""; }
+    footer {
+      margin-top: 28px;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    @page {
+      size: auto;
+      margin: 24px;
+    }
     @media print {
-      body {
-        background: #fff;
-        padding: 0;
-      }
-      .page {
-        border: 0;
-        border-radius: 0;
-        padding: 24px;
-      }
+      body { padding: 0; }
+      html, body { background: #fff; }
+      article { margin: 0; }
     }
   </style>
 </head>
 <body>
-  <article class="page">
+  <article>
     <p class="eyebrow">${safeCategory}</p>
     <h1>${safeTitle}</h1>
     <div class="meta">
       <div><strong>Business name:</strong> ${safeBusinessName}</div>
       <div><strong>Language:</strong> ${escapeHtml(language)}</div>
     </div>
-    <p class="summary">${safeSummary || "No summary provided."}</p>
+    <p class="summary">${safeSummary}</p>
     <div class="content">${safeContent}</div>
+    <footer>Generated from Editing Instance</footer>
   </article>
 </body>
 </html>`;
