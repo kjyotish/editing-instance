@@ -306,8 +306,8 @@ export function AIScriptsPage({
     <main className="page fade-in aiscripts-page">
       <PageHeader
         eyebrow="AI Scripts"
-        title="Upload-ready scripts with editable business names."
-        copy="Browse scripts by category, personalize the business name before downloading, and export a clean PDF for client delivery or internal use."
+        title="Ad or Content Scripts For Voiceover"
+        copy="Select, review, change business name and download script pdf for voiceover."
       />
 
       <section className="glass-card aiscripts-hero-card">
