@@ -182,12 +182,13 @@ export function downloadAIScriptPdf(
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.position = "fixed";
-  iframe.style.inset = "0";
-  iframe.style.width = "1px";
-  iframe.style.height = "1px";
+  iframe.style.left = "0";
+  iframe.style.top = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
   iframe.style.border = "0";
+  iframe.style.visibility = "hidden";
   iframe.style.opacity = "0";
-  iframe.style.pointerEvents = "none";
   iframe.srcdoc = html;
 
   const cleanup = () => {
@@ -202,13 +203,13 @@ export function downloadAIScriptPdf(
     }
 
     frameWindow.focus();
+    frameWindow.addEventListener("afterprint", cleanup, { once: true });
+
     try {
       frameWindow.print();
     } catch {
-      // Some browsers may block print; still cleanup.
+      cleanup();
     }
-
-    setTimeout(cleanup, 500);
   };
 
   document.body.appendChild(iframe);
