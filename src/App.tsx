@@ -2581,7 +2581,7 @@ function Footer() {
             <a href="https://instagram.com/jk__editings" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
               <Instagram size={18} />
             </a>
-            <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
+            <a href="https://youtube.com/@jyotish149" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
               <Youtube size={18} />
             </a>
             <a href="mailto:kjyotish124@gmail.com" aria-label="Email">
