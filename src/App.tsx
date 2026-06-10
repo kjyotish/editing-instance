@@ -260,6 +260,7 @@ function App() {
     DEFAULT_AI_SCRIPT_CATEGORIES,
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [videoPlayerOpen, setVideoPlayerOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const savedTheme = window.localStorage.getItem("editing-instance-theme");
     return savedTheme === "light" || savedTheme === "dark" || savedTheme === "system" ? savedTheme : "system";
@@ -345,7 +346,13 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Nav menuOpen={menuOpen} theme={theme} onThemeChange={setTheme} onMenuToggle={() => setMenuOpen((value) => !value)} />
+      <Nav
+        menuOpen={menuOpen}
+        theme={theme}
+        onThemeChange={setTheme}
+        onMenuToggle={() => setMenuOpen((value) => !value)}
+        hidden={videoPlayerOpen}
+      />
       {menuOpen && <MobileNav onClose={() => setMenuOpen(false)} />}
       <Routes>
         <Route
@@ -359,7 +366,7 @@ function App() {
             />
           }
         />
-        <Route path="/portfolio" element={<Portfolio projects={projects} />} />
+        <Route path="/portfolio" element={<Portfolio projects={projects} onPlayerOpen={setVideoPlayerOpen} />} />
         <Route
           path="/products"
           element={
@@ -438,12 +445,18 @@ function Nav({
   theme,
   onThemeChange,
   onMenuToggle,
+  hidden,
 }: {
   menuOpen: boolean;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   onMenuToggle: () => void;
+  hidden?: boolean;
 }) {
+  if (hidden) {
+    return null;
+  }
+
   return (
     <header className="nav-wrap">
       <nav className="nav-pill" aria-label="Primary navigation">
@@ -574,10 +587,14 @@ function Home({
   );
 }
 
-function Portfolio({ projects }: { projects: Project[] }) {
+function Portfolio({ projects, onPlayerOpen }: { projects: Project[]; onPlayerOpen: (open: boolean) => void }) {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<PortfolioFilter>("all");
   const openedVideoHistoryRef = useRef(false);
+
+  useEffect(() => {
+    onPlayerOpen(Boolean(activeProject));
+  }, [activeProject, onPlayerOpen]);
 
   useEffect(() => {
     if (!activeProject) {
@@ -616,6 +633,7 @@ function Portfolio({ projects }: { projects: Project[] }) {
   const customCats = allCategories.filter((cat) => !(predefinedCatValues as string[]).includes(cat));
 
   const visibleProjects = filter === "all" ? projects : projects.filter((project) => project.category === filter);
+  const hasLandscape = visibleProjects.some((project) => project.format === "landscape");
 
   const getCategoryLabel = (value: string): string => {
     const predefined = portfolioCategories.find((c) => c.value === value);
@@ -652,7 +670,7 @@ function Portfolio({ projects }: { projects: Project[] }) {
           </button>
         ))}
       </div>
-      <section className="masonry-grid">
+      <section className={hasLandscape ? "masonry-grid" : "masonry-grid no-landscape"}>
         {visibleProjects.map((project) => (
           <ProjectCard key={project.id} project={project} onOpen={setActiveProject} />
         ))}

@@ -539,6 +539,34 @@ video {
   align-items: start;
 }
 
+@media (min-width: 1200px) {
+  .masonry-grid {
+    display: block;
+    column-width: 340px;
+    column-gap: 24px;
+  }
+
+  .masonry-grid.no-landscape {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 24px;
+  }
+
+  .masonry-grid .project-card {
+    display: inline-grid;
+    width: 100%;
+    margin: 0 0 24px;
+    break-inside: avoid;
+  }
+
+  .masonry-grid.no-landscape .project-card {
+    display: grid;
+    width: auto;
+    margin: 0;
+    break-inside: auto;
+  }
+}
+
 .project-card {
   display: grid;
   align-content: start;
