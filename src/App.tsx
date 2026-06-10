@@ -577,6 +577,38 @@ function Home({
 function Portfolio({ projects }: { projects: Project[] }) {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<PortfolioFilter>("all");
+  const openedVideoHistoryRef = useRef(false);
+
+  useEffect(() => {
+    if (!activeProject) {
+      return;
+    }
+
+    window.history.pushState({ portfolioVideoOpen: true }, "", window.location.href);
+    openedVideoHistoryRef.current = true;
+
+    const onPopState = (event: PopStateEvent) => {
+      if (activeProject && (!event.state || !event.state.portfolioVideoOpen)) {
+        setActiveProject(null);
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      openedVideoHistoryRef.current = false;
+    };
+  }, [activeProject]);
+
+  const handleCloseProject = () => {
+    if (openedVideoHistoryRef.current) {
+      window.history.back();
+      return;
+    }
+
+    setActiveProject(null);
+  };
 
   // Get all unique categories from projects
   const allCategories = Array.from(new Set(projects.map((p) => p.category)));
@@ -628,7 +660,7 @@ function Portfolio({ projects }: { projects: Project[] }) {
       {visibleProjects.length === 0 && (
         <p className="empty-state">No portfolio videos are published in this category yet.</p>
       )}
-      {activeProject && <Theater project={activeProject} onClose={() => setActiveProject(null)} />}
+      {activeProject && <Theater project={activeProject} onClose={handleCloseProject} />}
     </main>
   );
 }
