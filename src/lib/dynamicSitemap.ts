@@ -3,8 +3,9 @@
 // To serve these, add routes to your API or generate as static files during build
 
 import type { Product, Project, AIScript } from "../types";
+import { siteConfig } from "../config/siteConfig";
 
-const SITE_URL = "https://editinginstance.in";
+const SITE_URL = siteConfig.siteUrl;
 const LAST_MODIFIED = new Date().toISOString().split('T')[0];
 
 export function generateMainSitemap(): string {

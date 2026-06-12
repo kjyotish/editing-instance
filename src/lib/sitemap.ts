@@ -1,4 +1,5 @@
 // Sitemap generation utilities for SEO
+import { siteConfig } from "../config/siteConfig";
 
 export interface SitemapEntry {
   url: string;
@@ -44,37 +45,37 @@ ${sitemaps
 
 export const mainSitemapEntries: SitemapEntry[] = [
   {
-    url: "https://editinginstance.in/",
+    url: `${siteConfig.siteUrl}/`,
     changeFrequency: "daily",
     priority: 1.0,
   },
   {
-    url: "https://editinginstance.in/portfolio",
+    url: `${siteConfig.siteUrl}/portfolio`,
     changeFrequency: "weekly",
     priority: 0.9,
   },
   {
-    url: "https://editinginstance.in/products",
+    url: `${siteConfig.siteUrl}/products`,
     changeFrequency: "daily",
     priority: 0.9,
   },
   {
-    url: "https://editinginstance.in/aiscripts",
+    url: `${siteConfig.siteUrl}/aiscripts`,
     changeFrequency: "weekly",
     priority: 0.8,
   },
   {
-    url: "https://editinginstance.in/services",
+    url: `${siteConfig.siteUrl}/services`,
     changeFrequency: "monthly",
     priority: 0.7,
   },
   {
-    url: "https://editinginstance.in/about",
+    url: `${siteConfig.siteUrl}/about`,
     changeFrequency: "monthly",
     priority: 0.6,
   },
   {
-    url: "https://editinginstance.in/contact",
+    url: `${siteConfig.siteUrl}/contact`,
     changeFrequency: "yearly",
     priority: 0.5,
   },
@@ -88,7 +89,7 @@ export function generateProductSitemapEntries(
   }>
 ): SitemapEntry[] {
   return products.map((product) => ({
-    url: `https://editinginstance.in/products/${product.id}`,
+    url: `${siteConfig.siteUrl}/products/${product.id}`,
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
@@ -102,7 +103,7 @@ export function generateScriptSitemapEntries(
   }>
 ): SitemapEntry[] {
   return scripts.map((script) => ({
-    url: `https://editinginstance.in/aiscripts/${script.id}`,
+    url: `${siteConfig.siteUrl}/aiscripts/${script.id}`,
     changeFrequency: "weekly" as const,
     priority: 0.7,
   }));
@@ -116,7 +117,7 @@ export function generatePortfolioSitemapEntries(
   }>
 ): SitemapEntry[] {
   return projects.map((project) => ({
-    url: `https://editinginstance.in/portfolio/${project.id}`,
+    url: `${siteConfig.siteUrl}/portfolio/${project.id}`,
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
@@ -124,7 +125,7 @@ export function generatePortfolioSitemapEntries(
 
 // Helper to submit sitemap to search engines
 export async function submitSitemapToSearchEngines() {
-  const sitemapUrl = encodeURIComponent("https://editinginstance.in/sitemap.xml");
+  const sitemapUrl = encodeURIComponent(`${siteConfig.siteUrl}/sitemap.xml`);
   
   // Google Search Console
   fetch(`https://www.google.com/ping?sitemap=${sitemapUrl}`).catch(() => {
