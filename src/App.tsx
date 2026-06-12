@@ -2766,7 +2766,7 @@ function Footer() {
         <div className="footer-bottom-right">
           {/* <Link to="/contact">Privacy Policy</Link>
           <Link to="/contact">Terms of Service</Link> */}
-          <Link to="/admin" className="admin-portal-link">Admin Portal</Link>
+          <Link to="/admin" className="admin-portal-link">Admin</Link>
         </div>
       </div>
     </footer>
