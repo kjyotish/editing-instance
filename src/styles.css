@@ -159,7 +159,7 @@ video {
   top: 18px;
   left: 0;
   right: 0;
-  z-index: 50;
+  z-index: 0;
   display: flex;
   justify-content: center;
   pointer-events: none;
@@ -1715,6 +1715,32 @@ textarea:focus {
   padding: 28px;
   display: grid;
   gap: 14px;
+  position: relative;
+}
+
+.aiscripts-preview-body-wrapper {
+  position: relative;
+}
+
+.aiscripts-copy-btn {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  color: var(--color-text);
+  font-size: 0;
+  line-height: 0;
+}
+
+.aiscripts-copy-btn.copied {
+  background: #10b981;
+  color: #fff;
 }
 
 .aiscripts-preview-body {
@@ -1731,6 +1757,10 @@ textarea:focus {
   color: var(--color-text);
   line-height: 1.75;
   white-space: pre-wrap;
+}
+
+.hide-on-mobile {
+  display: inline-flex;
 }
 
 .aiscripts-download-panel {
@@ -2268,6 +2298,10 @@ textarea:focus {
   .hero h1 {
     font-size: 44px;
     line-height: 1.04;
+  }
+
+  .hide-on-mobile {
+    display: none !important;
   }
 
   .hero p {

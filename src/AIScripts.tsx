@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, FileText, Filter, Search, X } from "lucide-react";
+import { Copy, Download, FileText, Filter, Search, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "./components/PageHeader";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -322,6 +322,7 @@ export function AIScriptsPage({
   const [language, setLanguage] = useState("");
   const [activeScript, setActiveScript] = useState<AIScript | null>(null);
   const [activeScriptLanguage, setActiveScriptLanguage] = useState("");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [query, setQuery] = useState("");
 
   const categories = useMemo(() => {
@@ -369,10 +370,24 @@ export function AIScriptsPage({
   useEffect(() => {
     if (activeScript) {
       setActiveScriptLanguage(activeScript.language || "English");
+      setCopyStatus("idle");
     } else {
       setActiveScriptLanguage("");
     }
   }, [activeScript]);
+
+  async function copyScriptBody(script: AIScript) {
+    const content = getPreviewContent(script, activeScriptLanguage || script.language || "English");
+
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyStatus("copied");
+      window.setTimeout(() => setCopyStatus("idle"), 1800);
+    } catch {
+      setCopyStatus("failed");
+      window.setTimeout(() => setCopyStatus("idle"), 1800);
+    }
+  }
 
   function getScriptLanguage(script: AIScript) {
     if (activeScript?.id === script.id) {
@@ -506,7 +521,7 @@ export function AIScriptsPage({
                       Preview script
                     </button>
                     <button
-                      className="primary-btn full"
+                      className="primary-btn full hide-on-mobile"
                       type="button"
                       onClick={() => void downloadAIScriptPdf(script, businessName, getScriptLanguage(script))}
                     >
@@ -543,12 +558,22 @@ export function AIScriptsPage({
                   ))}
                 </select>
               </label>
-              <div className="aiscripts-preview-body">
-                {getPreviewContent(activeScript, activeScriptLanguage)
-                  .split("\n")
-                  .map((line, index) => (
-                    <p key={`${line}-${index}`}>{line || "\u00a0"}</p>
-                  ))}
+              <div className="aiscripts-preview-body-wrapper">
+                <button
+                  className={`icon-btn aiscripts-copy-btn ${copyStatus === "copied" ? "copied" : ""}`}
+                  type="button"
+                  onClick={() => void copyScriptBody(activeScript)}
+                  aria-label={copyStatus === "copied" ? "Copied!" : "Copy script body"}
+                >
+                  <Copy size={18} />
+                </button>
+                <div className="aiscripts-preview-body">
+                  {getPreviewContent(activeScript, activeScriptLanguage)
+                    .split("\n")
+                    .map((line, index) => (
+                      <p key={`${line}-${index}`}>{line || "\u00a0"}</p>
+                    ))}
+                </div>
               </div>
             </div>
             <div className="glass-card buy-box aiscripts-download-panel">
@@ -567,7 +592,7 @@ export function AIScriptsPage({
                 />
               </label>
               <button
-                className="primary-btn full"
+                className="primary-btn full hide-on-mobile"
                 type="button"
                 onClick={() => void downloadAIScriptPdf(activeScript, businessName, activeScriptLanguage || activeScript.language || "English")}
               >
