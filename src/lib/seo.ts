@@ -1,4 +1,5 @@
 // SEO utilities for managing meta tags and structured data
+import { siteConfig, getOgImageUrl } from "../config/siteConfig";
 
 export interface SEOConfig {
   title: string;
@@ -12,9 +13,10 @@ export interface SEOConfig {
   modifiedDate?: string;
 }
 
-const SITE_NAME = "Editing Instance";
-const SITE_URL = "https://editinginstance.in";
-const DEFAULT_IMAGE = `${SITE_URL}/og-image.jpg`;
+// Use siteConfig for all site-wide settings
+const SITE_NAME = siteConfig.siteName;
+const SITE_URL = siteConfig.siteUrl;
+const DEFAULT_IMAGE = getOgImageUrl();
 
 export function updateMetaTags(config: SEOConfig) {
   // Update title

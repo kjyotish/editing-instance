@@ -2,6 +2,7 @@
 // Import and use these in your component files
 
 import { createProductSchema, createArticleSchema, addStructuredData } from "./seo";
+import { siteConfig, getProductUrl, getAbsoluteUrl } from "../config/siteConfig";
 import type { Product, AIScript, Project } from "../types";
 
 /**
@@ -15,7 +16,7 @@ export function addProductSchemaToPage(product: Product, category: string) {
     name: product.title,
     description: product.description,
     category: category,
-    url: `https://editinginstance.in/products/${product.id}`,
+    url: getProductUrl(product.id),
     image: product.coverUrl,
     ...(product.price > 0 && {
       offers: {
@@ -25,8 +26,8 @@ export function addProductSchemaToPage(product: Product, category: string) {
         availability: "https://schema.org/InStock",
         seller: {
           "@type": "Organization",
-          name: "Editing Instance",
-          url: "https://editinginstance.in",
+          name: siteConfig.siteName,
+          url: siteConfig.siteUrl,
         },
       },
     }),
@@ -58,10 +59,10 @@ export function addScriptSchemaToPage(script: AIScript) {
     },
     creator: {
       "@type": "Organization",
-      name: "Editing Instance",
-      url: "https://editinginstance.in",
+      name: siteConfig.siteName,
+      url: siteConfig.siteUrl,
     },
-    url: `https://editinginstance.in/aiscripts/${script.id}`,
+    url: getAbsoluteUrl(`/aiscripts/${script.id}`),
     inLanguage: script.language || "en",
     ...(script.createdAt && {
       datePublished: script.createdAt,
@@ -85,14 +86,14 @@ export function addProjectSchemaToPage(project: Project) {
     },
     author: {
       "@type": "Person",
-      name: "Jyotish Kumar",
+      name: siteConfig.author,
     },
     creator: {
       "@type": "Organization",
-      name: "Editing Instance",
-      url: "https://editinginstance.in",
+      name: siteConfig.siteName,
+      url: siteConfig.siteUrl,
     },
-    url: `https://editinginstance.in/portfolio/${project.id}`,
+    url: getAbsoluteUrl(`/portfolio/${project.id}`),
     datePublished: project.year,
     description: `${project.role} - ${project.title}`,
     ...(project.videoUrl && {
