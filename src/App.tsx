@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useSearchParams, useLocation } from "react-router-dom";
 import {
   ArrowRight,
   Check,
@@ -33,6 +33,7 @@ import { PageHeader } from "./components/PageHeader";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { portfolioCategories } from "./types";
 import type { AIScript, PortfolioCategory, Product, Project } from "./types";
+import { updateMetaTags, pageConfigs } from "./lib/seo";
 
 const navItems = [
   { label: "Home", to: "/" },
@@ -46,6 +47,7 @@ const navItems = [
 type PortfolioFilter = "all" | PortfolioCategory;
 type ThemeMode = "system" | "light" | "dark";
 type ContactFunctionResponse = { message?: string; error?: string };
+type NewsletterFunctionResponse = { message?: string; error?: string };
 type ProjectRow = {
   id: string;
   title: string;
@@ -225,6 +227,8 @@ async function downloadFreeProduct(product: Product) {
 }
 
 async function getFunctionErrorMessage(error: unknown) {
+  if (!error) return null;
+  
   const maybeError = error as { message?: string; context?: unknown };
   const response = maybeError.context instanceof Response ? maybeError.context : null;
 
@@ -343,6 +347,29 @@ function App() {
 
     setCartItem(product);
   }
+
+  // SEO: Update meta tags based on current route
+  const location = useLocation();
+  useEffect(() => {
+    const path = location.pathname;
+    
+    if (path === "/") {
+      updateMetaTags(pageConfigs.home);
+    } else if (path === "/portfolio") {
+      updateMetaTags(pageConfigs.portfolio);
+    } else if (path === "/products" || path === "/services") {
+      updateMetaTags(pageConfigs.products);
+    } else if (path === "/aiscripts") {
+      updateMetaTags(pageConfigs.aiscripts);
+    } else if (path === "/about") {
+      updateMetaTags(pageConfigs.about);
+    } else if (path === "/contact") {
+      updateMetaTags(pageConfigs.contact);
+    }
+    
+    // Scroll to top on route change
+    window.scrollTo(0, 0);
+  }, [location]);
 
   return (
     <div className="app-shell">
@@ -2116,7 +2143,7 @@ function EditAIScriptModal({
     </div>
   );
 }
-
+//About page with creator bio, experience, and contact info, plus a relevant image. This gives visitors insight into who is behind Editing Instance and builds trust in the brand. The content highlights Jyotish's expertise in video editing and digital assets, while the design maintains the site's modern and creative aesthetic.
 
 function About() {
   return (
@@ -2145,7 +2172,7 @@ function About() {
             </div>
             <div className="about-item">
               <strong>Connect</strong>
-              <p><a href="mailto:kjyotish124@gmail.com">kjyotish124@gmail.com</a> • <a href="https://instagram.com/jk__editings" target="_blank" rel="noopener noreferrer">Instagram @jk__editings</a> (50k+ followers)</p>
+              <p><a href="mailto:kjyotish124@gmail.com">kjyotish124@gmail.com</a> • <a href="https://instagram.com/editinginstance" target="_blank" rel="noopener noreferrer">Instagram @editinginstance</a></p>
             </div>
             <div className="about-item">
               <strong>Mission</strong>
@@ -2226,7 +2253,7 @@ function Contact() {
       <section className="contact-section">
         <div className="contact-form glass-card">
           {status === "sent" ? (
-            <div className="success-state">
+            <div className="success-state" role="status" aria-live="polite">
               <Check size={32} />
               <h2>Message sent!</h2>
               <p>Thanks for reaching out. You'll hear from me soon.</p>
@@ -2272,7 +2299,7 @@ function Contact() {
                   required
                 />
               </label>
-              <button className="primary-btn full" type="submit" disabled={status === "submitting"}>
+              <button className="primary-btn full send-btn" type="submit" disabled={status === "submitting"}>
                 {status === "submitting" ? "Sending..." : "Send message"}
               </button>
             </form>
@@ -2605,16 +2632,48 @@ function CartDrawer({ product, onClose }: { product: Product; onClose: () => voi
 
 function Footer() {
   const [email, setEmail] = useState("");
-  const [subscribed, setSubscribed] = useState(false);
+  const [status, setStatus] = useState<"idle" | "submitting" | "success">("idle");
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubscribe = (e: FormEvent) => {
+  async function handleSubscribe(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (email.trim()) {
-      setSubscribed(true);
-      setEmail("");
-      setTimeout(() => setSubscribed(false), 5000);
+    setError(null);
+
+    const normalizedEmail = email.trim();
+    if (!normalizedEmail) {
+      setError("Enter your email address.");
+      return;
     }
-  };
+
+    if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(normalizedEmail)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+
+    if (!supabase || !isSupabaseConfigured) {
+      setError("Newsletter signup is temporarily unavailable. Please try again later.");
+      return;
+    }
+
+    setStatus("submitting");
+
+    const payload = { email: normalizedEmail };
+    const { data, error: functionError } = await supabase.functions.invoke<NewsletterFunctionResponse>("send-newsletter-subscription", {
+      body: JSON.stringify(payload),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const subscriptionError = data?.error || await getFunctionErrorMessage(functionError);
+    if (functionError || subscriptionError) {
+      setError(subscriptionError || "Unable to complete the subscription right now.");
+      setStatus("idle");
+      return;
+    }
+
+    setStatus("success");
+    setEmail("");
+    setTimeout(() => setStatus("idle"), 5000);
+  }
 
   return (
     <footer className="site-footer">
@@ -2628,7 +2687,7 @@ function Footer() {
             Premium post-production tools, cinematic LUTs, and typography templates designed for creators, editors, and filmmakers who demand the highest quality.
           </p>
           <div className="footer-socials">
-            <a href="https://instagram.com/jk__editings" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+            <a href="https://instagram.com/editinginstance" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
               <Instagram size={18} />
             </a>
             <a href="https://youtube.com/@jyotish149" target="_blank" rel="noopener noreferrer" aria-label="YouTube">
@@ -2667,10 +2726,10 @@ function Footer() {
         <div className="footer-column newsletter-column">
           <h4>Stay Updated</h4>
           <p className="newsletter-text">Subscribe to receive free assets, presets, and tutorial updates directly to your inbox.</p>
-          {subscribed ? (
+          {status === "success" ? (
             <div className="newsletter-success fade-in">
               <Check size={16} />
-              <span>Subscribed successfully!</span>
+              <span>Subscribed</span>
             </div>
           ) : (
             <form className="newsletter-form" onSubmit={handleSubscribe}>
@@ -2682,11 +2741,19 @@ function Footer() {
                 required
                 aria-label="Email address for newsletter"
               />
-              <button type="submit" aria-label="Subscribe">
-                <Send size={14} />
+              <button className="send-btn newsletter-send" type="submit" aria-label="Subscribe" disabled={status === "submitting"}>
+                {status === "submitting" ? (
+                  <svg className="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeOpacity="0.2" />
+                    <path d="M12 2a10 10 0 0110 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeOpacity="0.8" />
+                  </svg>
+                ) : (
+                  <Send size={14} />
+                )}
               </button>
             </form>
           )}
+          {error ? <p className="form-error" style={{ marginTop: 12 }}>{error}</p> : null}
         </div>
       </div>
 

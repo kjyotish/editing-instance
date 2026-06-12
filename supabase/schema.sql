@@ -131,6 +131,18 @@ create table if not exists public.contact_submissions (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.newsletter_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  email text not null check (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
+  created_at timestamptz not null default now()
+);
+
+alter table public.newsletter_subscriptions enable row level security;
+
+create policy "Public can submit newsletter subscriptions"
+  on public.newsletter_subscriptions for insert
+  with check (true);
+
 alter table public.contact_submissions enable row level security;
 
 create policy "Public can submit contact messages"

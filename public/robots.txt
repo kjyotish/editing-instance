@@ -1,0 +1,43 @@
+# Robots.txt for Editing Instance
+# Allow all search engines to crawl the site
+
+User-agent: *
+Allow: /
+Allow: /portfolio
+Allow: /products
+Allow: /aiscripts
+Allow: /services
+Allow: /about
+Allow: /contact
+Disallow: /admin
+Disallow: /*.json
+Disallow: /node_modules/
+Disallow: /.git/
+
+# Specific rules for Google
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0
+
+# Specific rules for Bingbot
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+# Specific rules for other crawlers
+User-agent: Slurp
+Allow: /
+Crawl-delay: 1
+
+User-agent: DuckDuckBot
+Allow: /
+Crawl-delay: 1
+
+User-agent: Baiduspider
+Allow: /
+Crawl-delay: 1
+
+# Sitemap location
+Sitemap: https://editinginstance.in/sitemap.xml
+Sitemap: https://editinginstance.in/sitemap-products.xml
+Sitemap: https://editinginstance.in/sitemap-scripts.xml

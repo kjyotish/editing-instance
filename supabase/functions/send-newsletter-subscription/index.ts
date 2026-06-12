@@ -53,6 +53,7 @@ serve(async (request) => {
     "Access-Control-Max-Age": "86400",
     "Content-Type": "application/json",
   };
+
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers });
 
@@ -70,62 +71,42 @@ serve(async (request) => {
 
   try {
     const body = await request.json();
-    const name = clampText(body.name, 120);
     const email = clampText(body.email, 254);
-    const phone = clampText(body.phone, 24);
-    const message = clampText(body.message, 2000);
 
-    if (!name || !email || !phone || !message) {
-      return json({ error: "All fields are required" }, 400);
+    if (!email) {
+      return json({ error: "Email is required" }, 400);
     }
 
     if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)) {
       return json({ error: "Enter a valid email address" }, 400);
     }
 
-    if (!/^[+0-9][0-9\s-]{6,20}$/.test(phone)) {
-      return json({ error: "Enter a valid phone or WhatsApp number" }, 400);
-    }
-
-    if (message.length < 10) {
-      return json({ error: "Message must be at least 10 characters" }, 400);
-    }
-
     const { error: saveError } = await db
-      .from("contact_submissions")
-      .insert({ name, email, phone, message });
+      .from("newsletter_subscriptions")
+      .insert({ email });
 
     if (saveError) {
       return json({ error: saveError.message }, 500);
     }
 
     await smtp.sendMail({
-      from: `"Editing Instance Contact" <${SMTP_USER}>`,
+      from: `"Editing Instance Newsletter" <${SMTP_USER}>`,
       to: EMAIL_TO,
       replyTo: email,
-      subject: `New contact form message from ${name}`,
+      subject: `New newsletter signup: ${email}`,
       text: [
-        "New Editing Instance contact form submission",
+        "A new user subscribed to the Editing Instance newsletter.",
         "",
-        `Name: ${name}`,
         `Email: ${email}`,
-        `Phone / WhatsApp: ${phone}`,
-        "",
-        "Message:",
-        message,
       ].join("\n"),
       html: `
-        <h2>New Editing Instance contact form submission</h2>
-        <p><strong>Name:</strong> ${escapeHtml(name)}</p>
+        <h2>New Editing Instance newsletter signup</h2>
         <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-        <p><strong>Phone / WhatsApp:</strong> ${escapeHtml(phone)}</p>
-        <p><strong>Message:</strong></p>
-        <p>${escapeHtml(message).replaceAll("\n", "<br>")}</p>
       `,
     });
 
-    return json({ message: "Message sent" });
+    return json({ message: "Subscription saved" });
   } catch {
-    return json({ error: "Unable to send your message right now" }, 500);
+    return json({ error: "Unable to process the newsletter signup right now" }, 500);
   }
 });

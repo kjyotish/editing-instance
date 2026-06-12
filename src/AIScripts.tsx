@@ -175,7 +175,6 @@ export function downloadAIScriptPdf(
     category: script.category,
     businessName: effectiveBusinessName,
     language: effectiveLanguage,
-    summary: script.summary,
     content,
   });
 
@@ -492,20 +491,17 @@ function buildPrintableHtml({
   category,
   businessName,
   language,
-  summary,
   content,
 }: {
   title: string;
   category: string;
   businessName: string;
   language: string;
-  summary: string;
   content: string;
 }) {
   const safeTitle = escapeHtml(title);
   const safeCategory = escapeHtml(category);
   const safeBusinessName = escapeHtml(businessName);
-  const safeSummary = escapeHtml(summary || "No summary provided.");
   const safeContent = escapeHtml(content).replace(/\n/g, "<br />");
 
   return `<!doctype html>
@@ -585,9 +581,8 @@ function buildPrintableHtml({
       <div><strong>Business name:</strong> ${safeBusinessName}</div>
       <div><strong>Language:</strong> ${escapeHtml(language)}</div>
     </div>
-    <p class="summary">${safeSummary}</p>
     <div class="content">${safeContent}</div>
-    <footer>Generated from Editing Instance</footer>
+    <footer>generated from editinginstance.in   Follow us on Instagram - editing_instance</footer>
   </article>
 </body>
 </html>`;
