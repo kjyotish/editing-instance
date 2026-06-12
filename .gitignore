@@ -11,6 +11,8 @@ yarn.lock
 # Build output
 dist/
 build/
+tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # IDE
 .vscode/
