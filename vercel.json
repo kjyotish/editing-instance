@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/:path*",
       "destination": "/index.html"
     }
   ],
@@ -41,7 +41,7 @@
       ]
     },
     {
-      "source": "/.*\\.(js|css|jpg|jpeg|png|gif|ico|svg|webp|woff|woff2|ttf|otf)$",
+      "source": "/:file(.*\\.(js|css|jpg|jpeg|png|gif|ico|svg|webp|woff|woff2|ttf|otf))",
       "headers": [
         {
           "key": "Cache-Control",
