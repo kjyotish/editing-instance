@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, FileText, Filter, Search, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "./components/PageHeader";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { AIScript } from "./types";
 
 export const DEFAULT_AI_SCRIPT_CATEGORIES = [
@@ -145,23 +146,14 @@ export function personalizeAIScriptContent(script: AIScript, businessName: strin
 }
 
 export function localizeAIScriptContent(script: AIScript, businessName: string, language: string) {
-  const effectiveBusinessName = getEffectiveBusinessName(script, businessName);
-  const sourceLanguage = getAIScriptLanguageLabel(script.language || "English");
-  const targetLanguage = getAIScriptLanguageLabel(language || script.language || "English");
-  let content = personalizeAIScriptContent(script, effectiveBusinessName);
-
-  if (targetLanguage && targetLanguage !== sourceLanguage) {
-    content = translateContent(content, targetLanguage);
-  }
-
-  return content;
+  return personalizeAIScriptContent(script, businessName);
 }
 
 export function getEffectiveScriptLanguage(script: AIScript, language: string) {
   return language.trim() || script.language?.trim() || "English";
 }
 
-export function downloadAIScriptPdf(
+export async function downloadAIScriptPdf(
   script: AIScript,
   businessName: string,
   languageOverride?: string,
@@ -170,48 +162,154 @@ export function downloadAIScriptPdf(
   const effectiveLanguage = getEffectiveScriptLanguage(script, languageOverride || "");
   const content = localizeAIScriptContent(script, businessName, effectiveLanguage);
 
-  const html = buildPrintableHtml({
-    title: script.title,
-    category: script.category,
-    businessName: effectiveBusinessName,
-    language: effectiveLanguage,
-    content,
-  });
+  const fileName = `${script.title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/(^-|-$)/g, "") || "script"}.pdf`;
 
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.style.position = "fixed";
-  iframe.style.left = "0";
-  iframe.style.top = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  iframe.style.visibility = "hidden";
-  iframe.style.opacity = "0";
-  iframe.srcdoc = html;
+  try {
+    const pdfDoc = await PDFDocument.create();
+    const pageSize: [number, number] = [595.28, 841.89];
+    let page = pdfDoc.addPage(pageSize);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontSize = 12;
+    const titleSize = 18;
+    const margin = 48;
+    const lineHeight = fontSize * 1.4;
+    const maxWidth = page.getWidth() - margin * 2;
+    let cursorY = page.getHeight() - margin;
 
-  const cleanup = () => {
-    iframe.remove();
-  };
+    function wrapText(text: string, chosenFont: any, size: number) {
+      const words = text.split(" ");
+      const lines: string[] = [];
+      let currentLine = "";
 
-  iframe.onload = () => {
-    const frameWindow = iframe.contentWindow;
-    if (!frameWindow) {
-      cleanup();
-      return;
+      words.forEach((word) => {
+        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        if (chosenFont.widthOfTextAtSize(candidate, size) <= maxWidth) {
+          currentLine = candidate;
+        } else {
+          if (currentLine) lines.push(currentLine);
+          currentLine = word;
+        }
+      });
+
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+
+      return lines;
     }
 
-    frameWindow.focus();
-    frameWindow.addEventListener("afterprint", cleanup, { once: true });
-
-    try {
-      frameWindow.print();
-    } catch {
-      cleanup();
+    function addPageIfNeeded(requiredHeight: number) {
+      if (cursorY - requiredHeight < margin) {
+        page = pdfDoc.addPage(pageSize);
+        cursorY = page.getHeight() - margin;
+      }
     }
-  };
 
-  document.body.appendChild(iframe);
+    function drawTextLines(lines: string[], options: { font: any; size: number; color?: any }) {
+      lines.forEach((line) => {
+        addPageIfNeeded(lineHeight);
+        page.drawText(line, {
+          x: margin,
+          y: cursorY,
+          size: options.size,
+          font: options.font,
+          color: options.color || rgb(0, 0, 0),
+        });
+        cursorY -= lineHeight;
+      });
+    }
+
+    drawTextLines([script.title], { font: fontBold, size: titleSize });
+    cursorY -= fontSize;
+
+    const metaLines = [
+      `Business name: ${effectiveBusinessName}`,
+      `Language: ${effectiveLanguage}`,
+    ];
+
+    drawTextLines(metaLines, { font, size: fontSize, color: rgb(0.2, 0.2, 0.2) });
+    cursorY -= lineHeight;
+
+    const contentLines = content.split(/\r?\n/).flatMap((paragraph) => {
+      if (!paragraph.trim()) {
+        return [""];
+      }
+      return wrapText(paragraph, font, fontSize);
+    });
+
+    drawTextLines(contentLines, { font, size: fontSize });
+    cursorY -= lineHeight;
+
+    const footer = "generated from editinginstance.in   Follow us on Instagram - editing_instance";
+    addPageIfNeeded(lineHeight * 2);
+    page.drawText(footer, {
+      x: margin,
+      y: margin - 12,
+      size: 10,
+      font,
+      color: rgb(0.4, 0.4, 0.4),
+    });
+
+    const pdfBytes = await pdfDoc.save();
+    const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = fileName;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  } catch {
+    const html = buildPrintableHtml({
+      title: script.title,
+      category: script.category,
+      businessName: effectiveBusinessName,
+      language: effectiveLanguage,
+      content,
+    });
+
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.position = "fixed";
+    iframe.style.left = "0";
+    iframe.style.top = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.visibility = "hidden";
+    iframe.style.opacity = "0";
+    iframe.srcdoc = html;
+
+    const cleanup = () => {
+      iframe.remove();
+    };
+
+    iframe.onload = () => {
+      const frameWindow = iframe.contentWindow;
+      if (!frameWindow) {
+        cleanup();
+        return;
+      }
+
+      frameWindow.focus();
+      frameWindow.addEventListener("afterprint", cleanup, { once: true });
+
+      try {
+        frameWindow.print();
+      } catch {
+        cleanup();
+      }
+    };
+
+    document.body.appendChild(iframe);
+  }
 }
 
 export function AIScriptsPage({
@@ -410,7 +508,7 @@ export function AIScriptsPage({
                     <button
                       className="primary-btn full"
                       type="button"
-                      onClick={() => downloadAIScriptPdf(script, businessName, getScriptLanguage(script))}
+                      onClick={() => void downloadAIScriptPdf(script, businessName, getScriptLanguage(script))}
                     >
                       Download PDF <Download size={16} />
                     </button>
@@ -471,7 +569,7 @@ export function AIScriptsPage({
               <button
                 className="primary-btn full"
                 type="button"
-                onClick={() => downloadAIScriptPdf(activeScript, businessName, activeScriptLanguage || activeScript.language || "English")}
+                onClick={() => void downloadAIScriptPdf(activeScript, businessName, activeScriptLanguage || activeScript.language || "English")}
               >
                 Download PDF <Download size={16} />
               </button>
