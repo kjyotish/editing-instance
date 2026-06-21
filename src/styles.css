@@ -775,7 +775,7 @@ video {
   height: auto;
   object-fit: cover;
   margin-bottom: 8px;
-  border-radius: var(--radius-md) var(--radius-md) 18px 18px;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
 .product-category-section {
@@ -833,7 +833,7 @@ video {
 }
 
 .product-card.compact>img {
-  border-radius: 16px;
+  border-radius: 16px 16px 0 0;
   margin-bottom: 8px;
 }
 
