@@ -817,14 +817,14 @@ function Products({
         title="Digital assets for sharper edits."
         copy="Browse every product category, then download the assets that fit your editing and post-production workflow."
       />
-      <div className="product-search-bar glass-card">
+      <div className="search-bar product-search-bar" role="search" aria-label="Search products">
         <Search size={16} />
         <input
           type="search"
           value={searchParam}
           onChange={(event) => handleSearchChange(event.currentTarget.value)}
-          placeholder="Search products by name"
-          aria-label="Search products by name"
+          placeholder="Search products"
+          aria-label="Search products"
         />
       </div>
       <div className="filter-bar" aria-label="Product filters">
@@ -834,11 +834,6 @@ function Products({
           </button>
         ))}
       </div>
-      {searchParam && (
-        <div className="product-search-chip-row">
-          <span className="product-search-chip">Search: {searchParam}</span>
-        </div>
-      )}
       <section className="store-grid">
         {visibleProducts.map((product) => (
           <ProductCard

@@ -405,13 +405,13 @@ export function AIScriptsPage({
         title="Ad or Content Scripts For Voiceover"
         copy="Select, review, change business name and download script pdf for voiceover."
       />
-      <div className="aiscripts-search-bar glass-card">
+      <div className="search-bar aiscripts-search-bar" role="search" aria-label="Search AI scripts">
         <Search size={16} />
         <input
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
-          placeholder="Search script title or keyword"
-          aria-label="Search script title or keyword"
+          placeholder="Search scripts"
+          aria-label="Search scripts"
         />
       </div>
 

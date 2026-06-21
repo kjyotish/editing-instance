@@ -1650,30 +1650,6 @@ textarea:focus {
   padding-left: 40px;
 }
 
-.aiscripts-search-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
-  padding: 14px 16px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 999px;
-  background: var(--color-surface-strong);
-}
-
-.aiscripts-search-bar svg {
-  flex: 0 0 auto;
-  color: var(--color-muted);
-}
-
-.aiscripts-search-bar input {
-  min-height: 38px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
 .aiscripts-filter {
   margin: 0;
   padding-top: 0;
@@ -1831,45 +1807,43 @@ textarea:focus {
   margin-top: 80px;
 }
 
-.product-search-chip-row {
-  display: flex;
-  justify-content: flex-end;
-  margin: -8px 0 18px;
-}
-
-.product-search-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--color-primary-soft);
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.product-search-bar {
+.search-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 18px;
-  padding: 12px 16px;
-  border: 1px solid var(--color-border-soft);
-  border-radius: 999px;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.55);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+[data-theme="dark"] .search-bar,
+[data-theme="system"] .search-bar {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.search-bar:focus-within {
+  border-color: var(--color-primary-strong);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
   background: var(--color-surface-strong);
 }
 
-.product-search-bar svg {
+.search-bar svg {
   flex: 0 0 auto;
   color: var(--color-muted);
 }
 
-.product-search-bar input {
-  min-height: 38px;
+.search-bar input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+  letter-spacing: -0.01em;
 }
 
 .footer-top {
@@ -2394,10 +2368,6 @@ textarea:focus {
     padding: 24px;
   }
 
-  .aiscripts-search-bar {
-    padding: 12px 14px;
-  }
-
   .script-card {
     padding: 20px;
   }
@@ -2573,8 +2543,9 @@ textarea:focus {
     padding: 14px;
   }
 
-  .product-search-bar {
-    padding: 10px 14px;
+  .search-bar {
+    padding: 10px 12px;
+    border-radius: 16px;
   }
 
   .payment-grid,
