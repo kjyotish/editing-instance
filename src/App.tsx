@@ -35,7 +35,7 @@ import { PageHeader } from "./components/PageHeader";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import { portfolioCategories } from "./types";
 import type { AIScript, PortfolioCategory, Product, Project } from "./types";
-import { updateMetaTags, pageConfigs } from "./lib/seo";
+import { createProductSchema, pageConfigs, updateMetaTags, upsertStructuredData } from "./lib/seo";
 
 const navItems = [
   { label: "Home", to: "/" },
@@ -216,6 +216,24 @@ function getProductRoutePath(product: Product) {
 
 function getProductShareUrl(product: Product) {
   return `${window.location.origin}${getProductRoutePath(product)}`;
+}
+
+function getProjectRoutePath(project: Project) {
+  const slug = slugifyPath(project.title) || "project";
+  return `/portfolio/${project.id}/${slug}`;
+}
+
+function getProjectShareUrl(project: Project) {
+  return `${window.location.origin}${getProjectRoutePath(project)}`;
+}
+
+function getAIScriptRoutePath(script: AIScript) {
+  const slug = slugifyPath(script.title) || "script";
+  return `/aiscripts/${script.id}/${slug}`;
+}
+
+function getAIScriptShareUrl(script: AIScript) {
+  return `${window.location.origin}${getAIScriptRoutePath(script)}`;
 }
 
 async function downloadFreeProduct(product: Product) {
@@ -418,6 +436,7 @@ function App() {
           }
         />
         <Route path="/portfolio" element={<Portfolio projects={projects} onPlayerOpen={setVideoPlayerOpen} />} />
+        <Route path="/portfolio/:projectId/:projectSlug?" element={<Portfolio projects={projects} onPlayerOpen={setVideoPlayerOpen} />} />
         <Route
           path="/products"
           element={
@@ -441,6 +460,7 @@ function App() {
           }
         />
         <Route path="/aiscripts" element={<AIScriptsPage scripts={scripts} />} />
+        <Route path="/aiscripts/:scriptId/:scriptSlug?" element={<AIScriptsPage scripts={scripts} />} />
         <Route
           path="/services"
           element={
@@ -658,9 +678,10 @@ function Home({
 }
 
 function Portfolio({ projects, onPlayerOpen }: { projects: Project[]; onPlayerOpen: (open: boolean) => void }) {
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [filter, setFilter] = useState<PortfolioFilter>("all");
-  const openedVideoHistoryRef = useRef(false);
+  const navigate = useNavigate();
+  const { projectId } = useParams();
+  const activeProject = projectId ? projects.find((project) => project.id === projectId) ?? null : null;
 
   useEffect(() => {
     onPlayerOpen(Boolean(activeProject));
@@ -668,33 +689,59 @@ function Portfolio({ projects, onPlayerOpen }: { projects: Project[]; onPlayerOp
 
   useEffect(() => {
     if (!activeProject) {
+      updateMetaTags(pageConfigs.portfolio);
       return;
     }
 
-    window.history.pushState({ portfolioVideoOpen: true }, "", window.location.href);
-    openedVideoHistoryRef.current = true;
+    const url = getProjectShareUrl(activeProject);
+    updateMetaTags({
+      title: activeProject.title,
+      documentTitle: `${activeProject.title} | Portfolio | Editing Instance`,
+      description: `${activeProject.role} · ${activeProject.category} portfolio video from Editing Instance.`,
+      image: activeProject.posterUrl,
+      url,
+      type: "video",
+      keywords: [
+        activeProject.title,
+        activeProject.role,
+        activeProject.category,
+        "portfolio video",
+        "post-production",
+      ],
+    });
 
-    const onPopState = (event: PopStateEvent) => {
-      if (activeProject && (!event.state || !event.state.portfolioVideoOpen)) {
-        setActiveProject(null);
-      }
-    };
-
-    window.addEventListener("popstate", onPopState);
-
-    return () => {
-      window.removeEventListener("popstate", onPopState);
-      openedVideoHistoryRef.current = false;
-    };
+    return upsertStructuredData(`portfolio-project-${activeProject.id}`, {
+      "@context": "https://schema.org",
+      "@type": "VideoObject",
+      name: activeProject.title,
+      description: `${activeProject.role} · ${activeProject.category} portfolio video from Editing Instance.`,
+      thumbnailUrl: [activeProject.posterUrl],
+      uploadDate: `${activeProject.year}-01-01`,
+      url,
+      contentUrl: activeProject.videoUrl || undefined,
+      embedUrl: getYouTubeEmbedUrl(activeProject.youtubeUrl) || undefined,
+      author: {
+        "@type": "Person",
+        name: "Editing Instance",
+      },
+      publisher: {
+        "@type": "Organization",
+        name: "Editing Instance",
+        url: window.location.origin,
+      },
+    });
   }, [activeProject]);
 
-  const handleCloseProject = () => {
-    if (openedVideoHistoryRef.current) {
-      window.history.back();
+  useEffect(() => {
+    if (!projectId || activeProject) {
       return;
     }
 
-    setActiveProject(null);
+    navigate("/portfolio", { replace: true });
+  }, [activeProject, navigate, projectId]);
+
+  const handleCloseProject = () => {
+    navigate("/portfolio");
   };
 
   // Get all unique categories from projects
@@ -742,7 +789,11 @@ function Portfolio({ projects, onPlayerOpen }: { projects: Project[]; onPlayerOp
       </div>
       <section className={hasLandscape ? "masonry-grid" : "masonry-grid no-landscape"}>
         {visibleProjects.map((project) => (
-          <ProjectCard key={project.id} project={project} onOpen={setActiveProject} />
+          <ProjectCard
+            key={project.id}
+            project={project}
+            onOpen={(item) => navigate(getProjectRoutePath(item))}
+          />
         ))}
       </section>
       {visibleProjects.length === 0 && (
@@ -779,6 +830,39 @@ function Products({
     return categoryMatches && searchMatches;
   });
   const activeProduct = productId ? products.find((product) => product.id === productId) ?? null : null;
+
+  useEffect(() => {
+    if (!activeProduct) {
+      updateMetaTags(pageConfigs.products);
+      return;
+    }
+
+    const url = getProductShareUrl(activeProduct);
+    updateMetaTags({
+      title: activeProduct.title,
+      documentTitle: `${activeProduct.title} | Products | Editing Instance`,
+      description: activeProduct.description,
+      image: activeProduct.coverUrl,
+      url,
+      type: "product",
+      keywords: [
+        activeProduct.title,
+        activeProduct.category,
+        "video editing",
+        "LUT",
+        "preset",
+      ],
+    });
+
+    return upsertStructuredData(`product-${activeProduct.id}`, createProductSchema({
+      id: activeProduct.id,
+      title: activeProduct.title,
+      description: activeProduct.description,
+      price: activeProduct.isFree ? "0" : activeProduct.price,
+      image: activeProduct.coverUrl,
+      url,
+    }));
+  }, [activeProduct]);
 
   function handleFilter(category: string) {
     const nextParams = new URLSearchParams(searchParams);

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Download, FileText, Filter, Search, X } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { PageHeader } from "./components/PageHeader";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { AIScript } from "./types";
+import { pageConfigs, updateMetaTags, upsertStructuredData } from "./lib/seo";
 
 export const DEFAULT_AI_SCRIPT_CATEGORIES = [
   "Sales Scripts",
@@ -151,6 +152,19 @@ export function localizeAIScriptContent(script: AIScript, businessName: string, 
 
 export function getEffectiveScriptLanguage(script: AIScript, language: string) {
   return language.trim() || script.language?.trim() || "English";
+}
+
+function slugifyScriptPath(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function getAIScriptRoutePath(script: AIScript) {
+  const slug = slugifyScriptPath(script.title) || "script";
+  return `/aiscripts/${script.id}/${slug}`;
 }
 
 export async function downloadAIScriptPdf(
@@ -318,6 +332,8 @@ export function AIScriptsPage({
   scripts: AIScript[];
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { scriptId } = useParams();
   const [businessName, setBusinessName] = useState("");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [query, setQuery] = useState("");
@@ -330,7 +346,7 @@ export function AIScriptsPage({
 
   const categoryParam = searchParams.get("category");
   const activeCategory = categoryParam && categories.includes(categoryParam) ? categoryParam : "All";
-  const activeScriptId = searchParams.get("script");
+  const activeScriptId = scriptId ?? searchParams.get("script");
   const activeScript = activeScriptId ? scripts.find((script) => script.id === activeScriptId) ?? null : null;
 
   const filteredScripts = scripts.filter((script) => {
@@ -374,16 +390,63 @@ export function AIScriptsPage({
   }
 
   function openScript(script: AIScript) {
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("script", script.id);
-    setSearchParams(nextParams);
+    navigate(getAIScriptRoutePath(script));
   }
 
   function closeScript() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("script");
-    setSearchParams(nextParams, { replace: true });
+    navigate({
+      pathname: "/aiscripts",
+      search: nextParams.toString() ? `?${nextParams.toString()}` : "",
+    });
   }
+
+  useEffect(() => {
+    if (!activeScript) {
+      updateMetaTags(pageConfigs.aiscripts);
+      return;
+    }
+
+    const url = `${window.location.origin}${getAIScriptRoutePath(activeScript)}`;
+    updateMetaTags({
+      title: activeScript.title,
+      documentTitle: `${activeScript.title} | AI Scripts | Editing Instance`,
+      description: activeScript.summary,
+      url,
+      keywords: [
+        activeScript.title,
+        activeScript.category,
+        activeScript.language || "English",
+        "AI script",
+        "voiceover script",
+      ],
+    });
+
+    return upsertStructuredData(`ai-script-${activeScript.id}`, {
+      "@context": "https://schema.org",
+      "@type": "CreativeWork",
+      name: activeScript.title,
+      description: activeScript.summary,
+      about: {
+        "@type": "Thing",
+        name: activeScript.category,
+      },
+      inLanguage: activeScript.language || "English",
+      creator: {
+        "@type": "Organization",
+        name: "Editing Instance",
+        url: window.location.origin,
+      },
+      url,
+    });
+  }, [activeScript]);
+
+  useEffect(() => {
+    if (scriptId && !activeScript) {
+      navigate("/aiscripts", { replace: true });
+    }
+  }, [activeScript, navigate, scriptId]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;

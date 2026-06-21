@@ -170,9 +170,9 @@ video {
   pointer-events: auto;
   min-height: 48px;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   padding: 8px 10px 8px 22px;
   border: 1px solid var(--color-border-soft);
   border-radius: var(--radius-pill);
@@ -183,9 +183,11 @@ video {
 }
 
 .brand {
+  flex: 1 1 auto;
   font-family: var(--font-heading);
   font-size: 14px;
   font-weight: 700;
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -235,6 +237,7 @@ video {
 }
 
 .theme-switch {
+  flex: 0 0 auto;
   display: inline-grid;
   grid-template-columns: repeat(3, 32px);
   gap: 2px;
@@ -263,6 +266,7 @@ video {
 }
 
 .icon-btn {
+  flex: 0 0 auto;
   width: 40px;
   height: 40px;
   display: inline-grid;
@@ -2257,11 +2261,16 @@ textarea:focus {
   .nav-pill {
     width: 100%;
     justify-content: space-between;
-    row-gap: 10px;
+    gap: 10px;
   }
 
   .nav-links {
     display: none;
+  }
+
+  .brand {
+    flex: 1 1 auto;
+    max-width: none;
   }
 
   .theme-switch {
@@ -2273,6 +2282,11 @@ textarea:focus {
     order: 2;
     display: inline-grid;
     margin-left: auto;
+  }
+
+  .theme-switch,
+  .menu-btn {
+    flex-shrink: 0;
   }
 
   .hero {
@@ -2511,12 +2525,27 @@ textarea:focus {
   .nav-pill {
     width: calc(100% - 20px);
     padding-left: 16px;
+    padding-right: 8px;
   }
 
   .brand {
-    max-width: calc(100vw - 104px);
+    max-width: none;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .theme-switch {
+    grid-template-columns: repeat(3, 28px);
+  }
+
+  .theme-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .icon-btn {
+    width: 36px;
+    height: 36px;
   }
 
   .hero {

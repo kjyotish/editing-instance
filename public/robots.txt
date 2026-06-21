@@ -4,9 +4,13 @@
 User-agent: *
 Allow: /
 Allow: /portfolio
+Allow: /portfolio/
 Allow: /products
+Allow: /products/
 Allow: /aiscripts
+Allow: /aiscripts/
 Allow: /services
+Allow: /services/
 Allow: /about
 Allow: /contact
 Disallow: /admin

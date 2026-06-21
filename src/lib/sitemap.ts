@@ -8,6 +8,14 @@ export interface SitemapEntry {
   priority?: number;
 }
 
+function slugifyPath(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export function generateSitemapXML(entries: SitemapEntry[]): string {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
@@ -89,7 +97,7 @@ export function generateProductSitemapEntries(
   }>
 ): SitemapEntry[] {
   return products.map((product) => ({
-    url: `${siteConfig.siteUrl}/products/${product.id}`,
+    url: `${siteConfig.siteUrl}/products/${product.id}/${slugifyPath(product.title) || "product"}`,
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
@@ -103,7 +111,7 @@ export function generateScriptSitemapEntries(
   }>
 ): SitemapEntry[] {
   return scripts.map((script) => ({
-    url: `${siteConfig.siteUrl}/aiscripts/${script.id}`,
+    url: `${siteConfig.siteUrl}/aiscripts/${script.id}/${slugifyPath(script.title) || "script"}`,
     changeFrequency: "weekly" as const,
     priority: 0.7,
   }));
@@ -117,7 +125,7 @@ export function generatePortfolioSitemapEntries(
   }>
 ): SitemapEntry[] {
   return projects.map((project) => ({
-    url: `${siteConfig.siteUrl}/portfolio/${project.id}`,
+    url: `${siteConfig.siteUrl}/portfolio/${project.id}/${slugifyPath(project.title) || "project"}`,
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));

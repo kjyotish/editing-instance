@@ -8,6 +8,14 @@ import { siteConfig } from "../config/siteConfig";
 const SITE_URL = siteConfig.siteUrl;
 const LAST_MODIFIED = new Date().toISOString().split('T')[0];
 
+function slugifyPath(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 export function generateMainSitemap(): string {
   const routes = [
     { path: "", priority: 1.0, changefreq: "daily" },
@@ -40,7 +48,7 @@ export function generateProductsSitemap(products: Product[]): string {
   const urls = products
     .map(
       (product) => `  <url>
-    <loc>${SITE_URL}/products/${product.id}</loc>
+    <loc>${SITE_URL}/products/${product.id}/${slugifyPath(product.title) || "product"}</loc>
     <lastmod>${LAST_MODIFIED}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -58,7 +66,7 @@ export function generateScriptsSitemap(scripts: AIScript[]): string {
   const urls = scripts
     .map(
       (script) => `  <url>
-    <loc>${SITE_URL}/aiscripts/${script.id}</loc>
+    <loc>${SITE_URL}/aiscripts/${script.id}/${slugifyPath(script.title) || "script"}</loc>
     <lastmod>${LAST_MODIFIED}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -76,7 +84,7 @@ export function generatePortfolioSitemap(projects: Project[]): string {
   const urls = projects
     .map(
       (project) => `  <url>
-    <loc>${SITE_URL}/portfolio/${project.id}</loc>
+    <loc>${SITE_URL}/portfolio/${project.id}/${slugifyPath(project.title) || "project"}</loc>
     <lastmod>${LAST_MODIFIED}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>

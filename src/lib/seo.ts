@@ -3,11 +3,12 @@ import { siteConfig, getOgImageUrl } from "../config/siteConfig";
 
 export interface SEOConfig {
   title: string;
+  documentTitle?: string;
   description: string;
   keywords?: string[];
   image?: string;
   url?: string;
-  type?: "website" | "article" | "product";
+  type?: "website" | "article" | "product" | "video";
   author?: string;
   publishedDate?: string;
   modifiedDate?: string;
@@ -20,7 +21,7 @@ const DEFAULT_IMAGE = getOgImageUrl();
 
 export function updateMetaTags(config: SEOConfig) {
   // Update title
-  document.title = `${config.title} | ${SITE_NAME}`;
+  document.title = config.documentTitle ?? `${config.title} | ${SITE_NAME}`;
   updateOrCreateMeta("title", config.title);
   updateOrCreateMeta("og:title", config.title);
   updateOrCreateMeta("twitter:title", config.title);
@@ -46,9 +47,7 @@ export function updateMetaTags(config: SEOConfig) {
   updateOrCreateMeta("twitter:url", url);
 
   // Update type
-  if (config.type) {
-    updateOrCreateMeta("og:type", config.type);
-  }
+  updateOrCreateMeta("og:type", config.type ?? "website");
 
   // Update author
   if (config.author) {
@@ -101,6 +100,23 @@ export function addStructuredData(data: Record<string, unknown>) {
   script.type = "application/ld+json";
   script.textContent = JSON.stringify(data);
   document.head.appendChild(script);
+}
+
+export function upsertStructuredData(id: string, data: Record<string, unknown>) {
+  let script = document.querySelector(`script[type="application/ld+json"][data-seo-id="${id}"]`) as HTMLScriptElement | null;
+
+  if (!script) {
+    script = document.createElement("script");
+    script.type = "application/ld+json";
+    script.dataset.seoId = id;
+    document.head.appendChild(script);
+  }
+
+  script.textContent = JSON.stringify(data);
+
+  return () => {
+    script?.remove();
+  };
 }
 
 export function createProductSchema(product: {
@@ -168,6 +184,7 @@ export function createArticleSchema(article: {
 export const pageConfigs = {
   home: {
     title: "Home - Premium Video Editing Presets & Scripts",
+    documentTitle: "Editing Instance - Post Production",
     description: "Explore Editing Instance: premium video editing presets, LUTs, color grading tools, and AI-powered scripts for professional cinematic post-production.",
     keywords: ["video editing", "presets", "LUTs", "color grading", "cinematic effects", "post-production tools"],
   },

@@ -23,12 +23,12 @@ export interface SiteConfig {
  */
 export const siteConfig: SiteConfig = {
   siteName: "Editing Instance",
-  siteUrl: "https://editinginstance.vercel.app",
+  siteUrl: "https://editinginstance.in",
   logo: {
     url: "/vite.svg", // Update this to your logo path
     alt: "Editing Instance Logo",
   },
-  ogImage: "https://editinginstance.vercel.app/og-image.jpg", // Update this to your OG image URL
+  ogImage: "https://editinginstance.in/og-image.jpg", // Update this to your OG image URL
   twitterHandle: "@editinginstance",
   author: "Jyotish Kumar",
   copyright: "© 2024-2026 Editing Instance. All rights reserved.",
