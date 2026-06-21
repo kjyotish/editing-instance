@@ -170,6 +170,7 @@ video {
   pointer-events: auto;
   min-height: 48px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 24px;
   padding: 8px 10px 8px 22px;
@@ -191,6 +192,7 @@ video {
 .nav-links {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   gap: 4px;
   margin-left: auto;
 }
@@ -315,6 +317,13 @@ video {
 .hero-video {
   object-fit: cover;
   transform: scale(1.02);
+}
+
+.hero-video-placeholder {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(92, 75, 255, 0.24), transparent 35%),
+    radial-gradient(circle at 80% 30%, rgba(168, 85, 247, 0.18), transparent 28%),
+    linear-gradient(135deg, rgba(13, 13, 16, 0.96), rgba(32, 32, 38, 0.92));
 }
 
 .hero-overlay {
@@ -932,7 +941,7 @@ video {
 .product-modal,
 .cart-drawer {
   position: fixed;
-  z-index: 80;
+  z-index: 220;
   background: color-mix(in srgb, var(--color-background) 82%, transparent);
   backdrop-filter: blur(26px);
   -webkit-backdrop-filter: blur(26px);
@@ -981,6 +990,16 @@ body.modal-open .mobile-panel {
 
 .theater iframe {
   aspect-ratio: 16 / 9;
+}
+
+.theater-poster {
+  width: 100%;
+  max-height: calc(100vh - 190px);
+  max-height: calc(100dvh - 190px);
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  background: #000;
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.16);
 }
 
 .theater.portrait .theater-panel {
@@ -1225,6 +1244,11 @@ textarea {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+}
+
+.product-actions .primary-btn,
+.product-actions .secondary-btn {
+  width: 100%;
 }
 
 .contact-section {
@@ -1610,25 +1634,6 @@ textarea:focus {
   gap: 28px;
 }
 
-.aiscripts-hero-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 24px;
-  padding: 28px;
-}
-
-.aiscripts-hero-card h2 {
-  margin: 0 0 12px;
-  font-family: var(--font-heading);
-  font-size: 36px;
-  line-height: 1.08;
-}
-
-.aiscripts-controls {
-  display: grid;
-  gap: 16px;
-}
-
 .input-with-icon {
   position: relative;
 }
@@ -1643,6 +1648,30 @@ textarea:focus {
 
 .input-with-icon input {
   padding-left: 40px;
+}
+
+.aiscripts-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+}
+
+.aiscripts-search-bar svg {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+
+.aiscripts-search-bar input {
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .aiscripts-filter {
@@ -1800,6 +1829,47 @@ textarea:focus {
   padding: 80px 0 40px;
   border-top: 1px solid var(--color-border);
   margin-top: 80px;
+}
+
+.product-search-chip-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -8px 0 18px;
+}
+
+.product-search-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: var(--color-primary-soft);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.product-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 999px;
+  background: var(--color-surface-strong);
+}
+
+.product-search-bar svg {
+  flex: 0 0 auto;
+  color: var(--color-muted);
+}
+
+.product-search-bar input {
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .footer-top {
@@ -2179,7 +2249,6 @@ textarea:focus {
     padding-right: 0;
   }
 
-  .aiscripts-hero-card,
   .product-detail {
     grid-template-columns: 1fr;
   }
@@ -2214,6 +2283,7 @@ textarea:focus {
   .nav-pill {
     width: 100%;
     justify-content: space-between;
+    row-gap: 10px;
   }
 
   .nav-links {
@@ -2221,11 +2291,14 @@ textarea:focus {
   }
 
   .theme-switch {
-    margin-left: auto;
+    margin-left: 0;
+    order: 1;
   }
 
   .menu-btn {
+    order: 2;
     display: inline-grid;
+    margin-left: auto;
   }
 
   .hero {
@@ -2313,7 +2386,6 @@ textarea:focus {
     padding: 72px 0;
   }
 
-  .aiscripts-hero-card,
   .aiscripts-preview-panel,
   .aiscripts-download-panel,
   .admin-form,
@@ -2322,8 +2394,8 @@ textarea:focus {
     padding: 24px;
   }
 
-  .aiscripts-hero-card h2 {
-    font-size: 28px;
+  .aiscripts-search-bar {
+    padding: 12px 14px;
   }
 
   .script-card {
@@ -2501,8 +2573,16 @@ textarea:focus {
     padding: 14px;
   }
 
+  .product-search-bar {
+    padding: 10px 14px;
+  }
+
   .payment-grid,
   .order-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .product-actions {
     grid-template-columns: 1fr;
   }
 

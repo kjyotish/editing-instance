@@ -37,8 +37,19 @@ export const siteConfig: SiteConfig = {
 /**
  * Helper function to get product URL
  */
-export function getProductUrl(productId: string): string {
-  return `${siteConfig.siteUrl}/products/${productId}`;
+function slugifyPath(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+export function getProductUrl(productId: string, productName?: string): string {
+  const slug = productName ? slugifyPath(productName) : "";
+  return slug
+    ? `${siteConfig.siteUrl}/products/${productId}/${slug}`
+    : `${siteConfig.siteUrl}/products/${productId}`;
 }
 
 /**

@@ -8,7 +8,7 @@ export const projects: Project[] = [
     category: "cinematic",
     year: "2026",
     posterUrl: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=1400&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
     featured: true,
   },
   {
@@ -18,7 +18,7 @@ export const projects: Project[] = [
     category: "motion-graphics",
     year: "2025",
     posterUrl: "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1400&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
   },
   {
     id: "ember-wedding",
@@ -27,7 +27,7 @@ export const projects: Project[] = [
     category: "cinematic",
     year: "2025",
     posterUrl: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1400&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
   },
   {
     id: "craft-notes",
@@ -36,7 +36,7 @@ export const projects: Project[] = [
     category: "documentary-style",
     year: "2024",
     posterUrl: "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&w=1400&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
   },
   {
     id: "launch-shorts",
@@ -45,7 +45,7 @@ export const projects: Project[] = [
     category: "ugc-ad",
     year: "2026",
     posterUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
     format: "portrait",
   },
   {
@@ -55,7 +55,7 @@ export const projects: Project[] = [
     category: "ai-videos",
     year: "2026",
     posterUrl: "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1400&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
   },
   {
     id: "creator-testimonial-cut",
@@ -64,7 +64,7 @@ export const projects: Project[] = [
     category: "ugc-ad",
     year: "2026",
     posterUrl: "https://images.unsplash.com/photo-1611162616475-46b635cb6868?auto=format&fit=crop&w=900&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
     format: "portrait",
   },
   {
@@ -74,7 +74,7 @@ export const projects: Project[] = [
     category: "ai-videos",
     year: "2026",
     posterUrl: "https://images.unsplash.com/photo-1535223289827-42f1e9919769?auto=format&fit=crop&w=900&q=80",
-    videoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    videoUrl: "",
     format: "portrait",
   },
 ];

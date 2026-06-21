@@ -16,7 +16,7 @@ export function addProductSchemaToPage(product: Product, category: string) {
     name: product.title,
     description: product.description,
     category: category,
-    url: getProductUrl(product.id),
+    url: getProductUrl(product.id, product.title),
     image: product.coverUrl,
     ...(product.price > 0 && {
       offers: {

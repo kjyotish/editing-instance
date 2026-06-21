@@ -319,9 +319,6 @@ export function AIScriptsPage({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [businessName, setBusinessName] = useState("");
-  const [language, setLanguage] = useState("");
-  const [activeScript, setActiveScript] = useState<AIScript | null>(null);
-  const [activeScriptLanguage, setActiveScriptLanguage] = useState("");
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [query, setQuery] = useState("");
 
@@ -331,22 +328,16 @@ export function AIScriptsPage({
     )).sort();
   }, [scripts]);
 
-  const languages = useMemo(() => {
-    return Array.from(new Set([
-      ...DEFAULT_AI_SCRIPT_LANGUAGES,
-      ...scripts.map((script) => script.language || "English"),
-    ])).sort();
-  }, [scripts]);
-
   const categoryParam = searchParams.get("category");
   const activeCategory = categoryParam && categories.includes(categoryParam) ? categoryParam : "All";
+  const activeScriptId = searchParams.get("script");
+  const activeScript = activeScriptId ? scripts.find((script) => script.id === activeScriptId) ?? null : null;
 
   const filteredScripts = scripts.filter((script) => {
     const categoryMatches = activeCategory === "All" || script.category === activeCategory;
-    const languageMatches = !language || (script.language || "English") === language;
     const queryMatches = !query.trim()
-      || `${script.title} ${script.summary} ${script.content}`.toLowerCase().includes(query.trim().toLowerCase());
-    return categoryMatches && languageMatches && queryMatches;
+      || `${script.title} ${script.summary} ${script.content} ${script.category}`.toLowerCase().includes(query.trim().toLowerCase());
+    return categoryMatches && queryMatches;
   });
 
   const groupedScripts = useMemo(() => {
@@ -361,23 +352,8 @@ export function AIScriptsPage({
     return Array.from(byCategory.entries()).sort(([left], [right]) => left.localeCompare(right));
   }, [filteredScripts]);
 
-  useEffect(() => {
-    if (activeScript && !filteredScripts.some((script) => script.id === activeScript.id)) {
-      setActiveScript(null);
-    }
-  }, [activeScript, filteredScripts]);
-
-  useEffect(() => {
-    if (activeScript) {
-      setActiveScriptLanguage(activeScript.language || "English");
-      setCopyStatus("idle");
-    } else {
-      setActiveScriptLanguage("");
-    }
-  }, [activeScript]);
-
   async function copyScriptBody(script: AIScript) {
-    const content = getPreviewContent(script, activeScriptLanguage || script.language || "English");
+    const content = getPreviewContent(script);
 
     try {
       await navigator.clipboard.writeText(content);
@@ -390,15 +366,23 @@ export function AIScriptsPage({
   }
 
   function getScriptLanguage(script: AIScript) {
-    if (activeScript?.id === script.id) {
-      return activeScriptLanguage || script.language || "English";
-    }
-
     return script.language || "English";
   }
 
   function getPreviewContent(script: AIScript, languageOverride?: string) {
     return localizeAIScriptContent(script, businessName, languageOverride || getScriptLanguage(script));
+  }
+
+  function openScript(script: AIScript) {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("script", script.id);
+    setSearchParams(nextParams);
+  }
+
+  function closeScript() {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("script");
+    setSearchParams(nextParams, { replace: true });
   }
 
   useEffect(() => {
@@ -421,40 +405,15 @@ export function AIScriptsPage({
         title="Ad or Content Scripts For Voiceover"
         copy="Select, review, change business name and download script pdf for voiceover."
       />
-
-      <section className="glass-card aiscripts-hero-card">
-        <div>
-          <p className="eyebrow">Personalize before download</p>
-          <h2>Make every script feel branded</h2>
-          <p className="section-copy">
-            Add your firm or business name once, preview how the script reads, then download the final PDF with the placeholder replaced everywhere.
-          </p>
-        </div>
-        <div className="aiscripts-controls">
-          <label>
-            Search scripts
-            <div className="input-with-icon">
-              <Search size={16} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.currentTarget.value)}
-                placeholder="Search title, summary, or body"
-              />
-            </div>
-          </label>
-          <label>
-            Script language
-            <select value={language} onChange={(event) => setLanguage(event.currentTarget.value)}>
-              <option value="">All languages</option>
-              {languages.map((item) => (
-                <option key={item} value={item}>
-                  {getAIScriptLanguageLabel(item)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </section>
+      <div className="aiscripts-search-bar glass-card">
+        <Search size={16} />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          placeholder="Search script title or keyword"
+          aria-label="Search script title or keyword"
+        />
+      </div>
 
       <div className="filter-bar aiscripts-filter" aria-label="AI script categories">
         <button
@@ -517,7 +476,7 @@ export function AIScriptsPage({
                     {script.content.length > 220 ? "..." : ""}
                   </p>
                   <div className="product-card-action">
-                    <button className="secondary-btn full" type="button" onClick={() => setActiveScript(script)}>
+                    <button className="secondary-btn full" type="button" onClick={() => openScript(script)}>
                       Preview script
                     </button>
                     <button
@@ -537,7 +496,7 @@ export function AIScriptsPage({
 
       {activeScript && (
         <div className="product-modal aiscripts-modal" role="dialog" aria-modal="true" aria-label={`${activeScript.title} preview`}>
-          <button className="icon-btn close theater-close" type="button" onClick={() => setActiveScript(null)} aria-label="Close script preview">
+          <button className="icon-btn close theater-close" type="button" onClick={closeScript} aria-label="Close script preview">
             <X size={18} />
           </button>
           <div className="product-detail aiscripts-detail">
@@ -545,19 +504,6 @@ export function AIScriptsPage({
               <p className="eyebrow">{getAIScriptCategoryLabel(activeScript.category)}</p>
               <h2>{activeScript.title}</h2>
               <p>{activeScript.summary}</p>
-              <label>
-                Script language
-                <select
-                  value={activeScriptLanguage}
-                  onChange={(event) => setActiveScriptLanguage(event.currentTarget.value)}
-                >
-                  {languages.map((item) => (
-                    <option key={item} value={item}>
-                      {getAIScriptLanguageLabel(item)}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <div className="aiscripts-preview-body-wrapper">
                 <button
                   className={`icon-btn aiscripts-copy-btn ${copyStatus === "copied" ? "copied" : ""}`}
@@ -568,7 +514,7 @@ export function AIScriptsPage({
                   <Copy size={18} />
                 </button>
                 <div className="aiscripts-preview-body">
-                  {getPreviewContent(activeScript, activeScriptLanguage)
+                  {getPreviewContent(activeScript)
                     .split("\n")
                     .map((line, index) => (
                       <p key={`${line}-${index}`}>{line || "\u00a0"}</p>
@@ -581,7 +527,7 @@ export function AIScriptsPage({
               <h3>{activeScript.title}</h3>
               <p>Change the business name once, then export the final script in PDF format.</p>
               <div className="script-meta-row">
-                <span>{getAIScriptLanguageLabel(activeScriptLanguage || activeScript.language || "English")}</span>
+                <span>{getAIScriptLanguageLabel(activeScript.language || "English")}</span>
               </div>
               <label>
                 Business name
@@ -594,7 +540,7 @@ export function AIScriptsPage({
               <button
                 className="primary-btn full hide-on-mobile"
                 type="button"
-                onClick={() => void downloadAIScriptPdf(activeScript, businessName, activeScriptLanguage || activeScript.language || "English")}
+                onClick={() => void downloadAIScriptPdf(activeScript, businessName, activeScript.language || "English")}
               >
                 Download PDF <Download size={16} />
               </button>

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link, NavLink, Route, Routes, useSearchParams, useLocation } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
   Check,
@@ -15,6 +15,8 @@ import {
   Play,
   Send,
   Sparkles,
+  Search,
+  Share2,
   Sun,
   Upload,
   X,
@@ -199,6 +201,23 @@ function getDownloadName(product: Product) {
   }
 }
 
+function slugifyPath(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function getProductRoutePath(product: Product) {
+  const slug = slugifyPath(product.title) || "product";
+  return `/products/${product.id}/${slug}`;
+}
+
+function getProductShareUrl(product: Product) {
+  return `${window.location.origin}${getProductRoutePath(product)}`;
+}
+
 async function downloadFreeProduct(product: Product) {
   if (!product.fileUrl) {
     return;
@@ -269,8 +288,9 @@ function App() {
     const savedTheme = window.localStorage.getItem("editing-instance-theme");
     return savedTheme === "light" || savedTheme === "dark" || savedTheme === "system" ? savedTheme : "system";
   });
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [cartItem, setCartItem] = useState<Product | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -348,8 +368,12 @@ function App() {
     setCartItem(product);
   }
 
+  function handleSelectProduct(product: Product) {
+    const preserveQuery = location.pathname.startsWith("/products") || location.pathname.startsWith("/services");
+    navigate(`${getProductRoutePath(product)}${preserveQuery ? location.search : ""}`);
+  }
+
   // SEO: Update meta tags based on current route
-  const location = useLocation();
   useEffect(() => {
     const path = location.pathname;
     
@@ -357,7 +381,7 @@ function App() {
       updateMetaTags(pageConfigs.home);
     } else if (path === "/portfolio") {
       updateMetaTags(pageConfigs.portfolio);
-    } else if (path === "/products" || path === "/services") {
+    } else if (path.startsWith("/products") || path.startsWith("/services")) {
       updateMetaTags(pageConfigs.products);
     } else if (path === "/aiscripts") {
       updateMetaTags(pageConfigs.aiscripts);
@@ -389,7 +413,7 @@ function App() {
               products={products}
               projects={projects}
               onDownload={handleDownloadProduct}
-              onSelectProduct={setSelectedProduct}
+              onSelectProduct={handleSelectProduct}
             />
           }
         />
@@ -400,7 +424,19 @@ function App() {
             <Products
               products={products}
               onDownload={handleDownloadProduct}
-              onSelectProduct={setSelectedProduct}
+              onSelectProduct={handleSelectProduct}
+              onBuyProduct={setCartItem}
+            />
+          }
+        />
+        <Route
+          path="/products/:productId/:productSlug?"
+          element={
+            <Products
+              products={products}
+              onDownload={handleDownloadProduct}
+              onSelectProduct={handleSelectProduct}
+              onBuyProduct={setCartItem}
             />
           }
         />
@@ -411,7 +447,19 @@ function App() {
             <Products
               products={products}
               onDownload={handleDownloadProduct}
-              onSelectProduct={setSelectedProduct}
+              onSelectProduct={handleSelectProduct}
+              onBuyProduct={setCartItem}
+            />
+          }
+        />
+        <Route
+          path="/services/:productId/:productSlug?"
+          element={
+            <Products
+              products={products}
+              onDownload={handleDownloadProduct}
+              onSelectProduct={handleSelectProduct}
+              onBuyProduct={setCartItem}
             />
           }
         />
@@ -445,17 +493,6 @@ function App() {
           )}
         />
       </Routes>
-      {selectedProduct && (
-        <ProductDetailModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          onBuy={(product) => {
-            setSelectedProduct(null);
-            setCartItem(product);
-          }}
-          onDownload={handleDownloadProduct}
-        />
-      )}
       {cartItem && (
         <CartDrawer
           product={cartItem}
@@ -546,7 +583,7 @@ function Home({
 }) {
   const featuredProject = projects.find((project) => project.featured && project.videoUrl)
     ?? projects.find((project) => project.videoUrl)
-    ?? projects[0];
+    ?? null;
   const categories = Array.from(new Set(products.map((product) => product.category)));
 
   const sectionCopy: Record<string, string> = {
@@ -560,9 +597,15 @@ function Home({
   return (
     <main className="fade-in">
       <section className="hero">
-        <video className="hero-video" autoPlay muted loop playsInline poster={featuredProject.posterUrl}>
-          <source src={featuredProject.videoUrl} type="video/mp4" />
-        </video>
+        {featuredProject?.videoUrl ? (
+          <video className="hero-video" autoPlay muted loop playsInline poster={featuredProject.posterUrl}>
+            <source src={featuredProject.videoUrl} type="video/mp4" />
+          </video>
+        ) : featuredProject ? (
+          <img className="hero-video" src={featuredProject.posterUrl} alt={featuredProject.title} />
+        ) : (
+          <div className="hero-video hero-video-placeholder" aria-hidden="true" />
+        )}
         <div className="hero-overlay" />
         <div className="hero-content">
           <p className="eyebrow">Premium post-production studio</p>
@@ -714,20 +757,58 @@ function Products({
   products,
   onDownload,
   onSelectProduct,
+  onBuyProduct,
 }: {
   products: Product[];
   onDownload: (product: Product) => void;
   onSelectProduct: (product: Product) => void;
+  onBuyProduct: (product: Product) => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { productId } = useParams();
   const categories = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
   const categoryParam = searchParams.get("category");
+  const searchParam = searchParams.get("search") ?? "";
   const filter = categoryParam && categories.includes(categoryParam) ? categoryParam : "All";
-  const visibleProducts = filter === "All" ? products : products.filter((product) => product.category === filter);
+  const normalizedSearch = searchParam.trim().toLowerCase();
+  const visibleProducts = products.filter((product) => {
+    const categoryMatches = filter === "All" || product.category === filter;
+    const searchMatches = !normalizedSearch || `${product.title} ${product.description} ${product.category}`.toLowerCase().includes(normalizedSearch);
+    return categoryMatches && searchMatches;
+  });
+  const activeProduct = productId ? products.find((product) => product.id === productId) ?? null : null;
 
   function handleFilter(category: string) {
-    setSearchParams(category === "All" ? {} : { category });
+    const nextParams = new URLSearchParams(searchParams);
+    if (category === "All") {
+      nextParams.delete("category");
+    } else {
+      nextParams.set("category", category);
+    }
+    setSearchParams(nextParams);
   }
+
+  function handleSearchChange(value: string) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (value.trim()) {
+      nextParams.set("search", value);
+    } else {
+      nextParams.delete("search");
+    }
+    setSearchParams(nextParams);
+  }
+
+  function handleCloseProduct() {
+    navigate(`/products${location.search}`, { replace: true });
+  }
+
+  useEffect(() => {
+    if (productId && !activeProduct) {
+      navigate(`/products${location.search}`, { replace: true });
+    }
+  }, [activeProduct, location.search, navigate, productId]);
 
   return (
     <main className="page fade-in">
@@ -736,15 +817,16 @@ function Products({
         title="Digital assets for sharper edits."
         copy="Browse every product category, then download the assets that fit your editing and post-production workflow."
       />
-      <section className="service-row">
-        {["Commercial Editing", "Color Grading", "Short-form Systems"].map((service) => (
-          <article className="glass-card service-card" key={service}>
-            <Sparkles size={22} />
-            <h3>{service}</h3>
-            <p>Premium structure, pacing, and finish for high-trust visual content.</p>
-          </article>
-        ))}
-      </section>
+      <div className="product-search-bar glass-card">
+        <Search size={16} />
+        <input
+          type="search"
+          value={searchParam}
+          onChange={(event) => handleSearchChange(event.currentTarget.value)}
+          placeholder="Search products by name"
+          aria-label="Search products by name"
+        />
+      </div>
       <div className="filter-bar" aria-label="Product filters">
         {categories.map((category) => (
           <button className={filter === category ? "chip active" : "chip"} key={category} type="button" onClick={() => handleFilter(category)}>
@@ -752,6 +834,11 @@ function Products({
           </button>
         ))}
       </div>
+      {searchParam && (
+        <div className="product-search-chip-row">
+          <span className="product-search-chip">Search: {searchParam}</span>
+        </div>
+      )}
       <section className="store-grid">
         {visibleProducts.map((product) => (
           <ProductCard
@@ -762,6 +849,17 @@ function Products({
           />
         ))}
       </section>
+      {visibleProducts.length === 0 && (
+        <p className="empty-state">No products match your search and filter.</p>
+      )}
+      {activeProduct && (
+        <ProductDetailModal
+          product={activeProduct}
+          onClose={handleCloseProduct}
+          onBuy={onBuyProduct}
+          onDownload={onDownload}
+        />
+      )}
     </main>
   );
 }
@@ -2326,6 +2424,7 @@ function ProjectPreview({ project }: { project: Project }) {
 function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: Project) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const youtubeEmbedUrl = getYouTubeEmbedUrl(project.youtubeUrl);
+  const hasVideo = Boolean(project.videoUrl);
 
   return (
     <article className={project.format === "portrait" ? "project-card portrait" : "project-card"}>
@@ -2343,10 +2442,12 @@ function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: 
       >
         {youtubeEmbedUrl ? (
           <img className="project-poster" src={project.posterUrl} alt={project.title} loading="lazy" />
-        ) : (
+        ) : hasVideo ? (
           <video ref={videoRef} muted loop playsInline poster={project.posterUrl}>
             <source src={project.videoUrl} type="video/mp4" />
           </video>
+        ) : (
+          <img className="project-poster" src={project.posterUrl} alt={project.title} loading="lazy" />
         )}
         <span><Play size={18} /></span>
       </button>
@@ -2360,6 +2461,7 @@ function ProjectCard({ project, onOpen }: { project: Project; onOpen: (project: 
 
 function Theater({ project, onClose }: { project: Project; onClose: () => void }) {
   const youtubeEmbedUrl = getYouTubeEmbedUrl(project.youtubeUrl);
+  const hasVideo = Boolean(project.videoUrl);
 
   return (
     <div className={project.format === "portrait" ? "theater portrait" : "theater"} role="dialog" aria-modal="true">
@@ -2374,10 +2476,12 @@ function Theater({ project, onClose }: { project: Project; onClose: () => void }
             src={`${youtubeEmbedUrl}&autoplay=1`}
             title={project.title}
           />
-        ) : (
+        ) : hasVideo ? (
           <video controls autoPlay poster={project.posterUrl}>
             <source src={project.videoUrl} type="video/mp4" />
           </video>
+        ) : (
+          <img className="theater-poster" src={project.posterUrl} alt={project.title} />
         )}
         <div className="theater-meta">
           <h2>{project.title}</h2>
@@ -2438,6 +2542,30 @@ function ProductDetailModal({
 
   const hasLutPreview = isLutCategory(product.category) &&
     Boolean(product.previewBeforeUrl && product.previewAfterUrl);
+  const shareUrl = getProductShareUrl(product);
+
+  async function handleShare() {
+    const shareData = {
+      title: product.title,
+      text: `Check out ${product.title} on Editing Instance`,
+      url: shareUrl,
+    };
+
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch {
+        // Fall back to clipboard below.
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      window.prompt("Copy this product link:", shareUrl);
+    }
+  }
 
   return (
     <div className="product-modal" role="dialog" aria-modal="true" aria-label={`${product.title} details`}>
@@ -2457,7 +2585,7 @@ function ProductDetailModal({
           <h2>{product.title}</h2>
           <p>{product.description}</p>
           <strong className="detail-price">{product.isFree ? "Free" : `$${product.price}`}</strong>
-          
+
           {product.features && product.features.length > 0 && (
             <ul>
               {product.features.map((feature) => (
@@ -2467,20 +2595,30 @@ function ProductDetailModal({
               ))}
             </ul>
           )}
-          
-          <button
-            className="primary-btn full"
-            type="button"
-            onClick={() => {
-              if (product.isFree) {
-                onDownload(product);
-              } else {
-                onBuy(product);
-              }
-            }}
-          >
-            {product.isFree ? "Download" : `Buy Now — $${product.price}`}
-          </button>
+
+          <div className="product-actions">
+            <button
+              className="secondary-btn"
+              type="button"
+              onClick={handleShare}
+            >
+              <Share2 size={14} /> Share product
+            </button>
+            <button
+              className="primary-btn"
+              type="button"
+              onClick={() => {
+                if (product.isFree) {
+                  onDownload(product);
+                } else {
+                  onBuy(product);
+                }
+              }}
+            >
+              {product.isFree ? "Download" : `Buy Now — $${product.price}`}
+            </button>
+          </div>
+
         </div>
       </div>
     </div>
